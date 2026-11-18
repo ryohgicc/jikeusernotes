@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><title>即刻私人备注</title>
+<style>
+body { width: 280px; padding: 16px; font: 14px/1.6 system-ui, sans-serif; color: #222; }
+h1 { font-size: 18px; margin: 0; } p { color: #666; }
+button, label { display: block; width: 100%; box-sizing: border-box; margin: 8px 0;
+padding: 8px; border: 1px solid #ddd; border-radius: 8px; background: #fff;
+font: inherit; text-align: center; cursor: pointer; }
+input { margin-top: 8px; width: 100%; } #status { overflow-wrap: anywhere; }
+</style></head><body>
+<h1>即刻私人备注</h1>
+<p>在即刻网页版点击昵称后的「+ 备注」。已有备注可点击修改。</p>
+<p id="count"></p>
+<button id="export" type="button">导出备注备份</button>
+<label for="import">导入备份（合并，同一用户以导入为准）<input id="import" type="file" accept="application/json,.json"></label>
+<p id="status" role="status"></p>
+<p>数据仅保存在本机，不随账号同步。卸载扩展前请先导出。</p>
+<script src="popup.js"></script></body></html>

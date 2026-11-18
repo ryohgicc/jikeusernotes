@@ -1,0 +1,25 @@
+.jkn-note {
+  display: inline-block !important;
+  flex: 0 1 auto !important;
+  max-width: 14em !important;
+  margin: 0 0 0 6px !important;
+  padding: 1px 5px !important;
+  border: 1px solid #9b875e55 !important;
+  border-radius: 5px !important;
+  background: #d7ad3b15 !important;
+  color: #927626 !important;
+  font: 400 12px/1.5 system-ui, sans-serif !important;
+  vertical-align: middle !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  cursor: pointer !important;
+}
+.jkn-note:hover, .jkn-note:focus-visible {
+  background: #d7ad3b30 !important;
+  outline: 2px solid #c9a441 !important;
+  outline-offset: 2px !important;
+}
+@media (prefers-color-scheme: dark) {
+  .jkn-note { color: #d8bc72 !important; }
+}

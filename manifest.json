@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "即刻私人备注",
+  "version": "1.0.0",
+  "description": "在即刻网页版的昵称后添加仅保存在本机的私人备注。",
+  "permissions": ["storage"],
+  "content_scripts": [{
+    "matches": ["https://web.okjike.com/*"],
+    "js": ["content.js"],
+    "css": ["content.css"],
+    "run_at": "document_idle"
+  }],
+  "action": { "default_title": "即刻私人备注", "default_popup": "popup.html" }
+}
