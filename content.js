@@ -28,18 +28,32 @@
     }
   }
 
+  function profileUsername() {
+    const match = location.pathname.match(/^\/u\/([^/]+)\/?$/);
+    if (!match) return null;
+    try {
+      const username = decodeURIComponent(match[1]);
+      return /^[a-zA-Z0-9_-]{1,128}$/.test(username) ? username : null;
+    } catch { return null; }
+  }
+
   function scan() {
+    // Keep notes on the profile header only. Feed/post author rows are deliberately omitted.
+    const currentProfile = profileUsername();
     for (const [anchor, item] of mounts) {
-      if (!anchor.isConnected || identity(anchor) !== item.id) {
+      if (!currentProfile || !anchor.isConnected || identity(anchor) !== item.id) {
         item.button.remove();
         mounts.delete(anchor);
       }
     }
+    if (!currentProfile) return;
+    let profileHeaderFound = false;
     for (const anchor of document.querySelectorAll('a[href*="/u/"]')) {
       const id = identity(anchor);
       const name = anchor.textContent.trim();
       // Avatar links and links wrapping whole cards are not nickname labels.
       if (!id || !name || name.length > 100 || anchor.querySelector('img, svg, button, a')) continue;
+      if (id !== currentProfile || profileHeaderFound) continue;
       const parent = anchor.parentElement;
       const target = parent?.matches('[class*="_username_"]') ? parent : anchor;
       let item = mounts.get(anchor);
@@ -58,6 +72,7 @@
       }
       if (target.nextSibling !== item.button) target.after(item.button);
       render(item.button, id, name);
+      profileHeaderFound = true;
     }
   }
 
