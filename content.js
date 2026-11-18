@@ -28,32 +28,25 @@
     }
   }
 
-  function profileUsername() {
-    const match = location.pathname.match(/^\/u\/([^/]+)\/?$/);
-    if (!match) return null;
-    try {
-      const username = decodeURIComponent(match[1]);
-      return /^[a-zA-Z0-9_-]{1,128}$/.test(username) ? username : null;
-    } catch { return null; }
+  function isProfileTabAnchor(anchor) {
+    // The profile's tab bar reuses the profile URL for labels such as
+    // “动态 / 相册 / 收藏 / 我的圈子”. It is navigation, not a user name.
+    if (anchor.closest('[role="tab"], [role="tablist"], nav')) return true;
+    return /^(动态|相册|收藏|我的圈子)$/.test(anchor.textContent.replace(/\s/g, ''));
   }
 
   function scan() {
-    // Keep notes on the profile header only. Feed/post author rows are deliberately omitted.
-    const currentProfile = profileUsername();
     for (const [anchor, item] of mounts) {
-      if (!currentProfile || !anchor.isConnected || identity(anchor) !== item.id) {
+      if (!anchor.isConnected || identity(anchor) !== item.id || isProfileTabAnchor(anchor)) {
         item.button.remove();
         mounts.delete(anchor);
       }
     }
-    if (!currentProfile) return;
-    let profileHeaderFound = false;
     for (const anchor of document.querySelectorAll('a[href*="/u/"]')) {
       const id = identity(anchor);
       const name = anchor.textContent.trim();
       // Avatar links and links wrapping whole cards are not nickname labels.
-      if (!id || !name || name.length > 100 || anchor.querySelector('img, svg, button, a')) continue;
-      if (id !== currentProfile || profileHeaderFound) continue;
+      if (!id || !name || name.length > 100 || isProfileTabAnchor(anchor) || anchor.querySelector('img, svg, button, a')) continue;
       const parent = anchor.parentElement;
       const target = parent?.matches('[class*="_username_"]') ? parent : anchor;
       let item = mounts.get(anchor);
@@ -72,7 +65,6 @@
       }
       if (target.nextSibling !== item.button) target.after(item.button);
       render(item.button, id, name);
-      profileHeaderFound = true;
     }
   }
 
