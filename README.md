@@ -2,6 +2,16 @@
 
 Chrome / Edge 本地扩展。在即刻网页版昵称后显示「+ 备注」，点击后填写私人备注；已有备注显示为「（备注内容）」，点击可修改，清空后保存即可删除。
 
+## 效果预览
+
+实际使用截图：动态流中，昵称后显示「+ 备注」或已保存的备注。
+
+![动态流中的私人备注](docs/images/following-notes.png)
+
+个人主页中的备注显示效果：
+
+<img src="docs/images/profile-notes.png" alt="个人主页中的私人备注" width="680">
+
 ## 安装
 
 1. 在 [GitHub 仓库](https://github.com/ryohgicc/jikeusernotes) 点击「Code → Download ZIP」并解压，或克隆仓库：`git clone https://github.com/ryohgicc/jikeusernotes.git`。也可使用单独提供的扩展 ZIP。
