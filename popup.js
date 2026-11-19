@@ -18,8 +18,9 @@ function maxAgeHours(value) {
 
 function enableReadingControls() {
   restoreReading.disabled = false;
-  readingNotice.disabled = readingExpiry.disabled = !restoreReading.checked;
-  readingMaxAge.disabled = !restoreReading.checked || !readingExpiry.checked;
+  readingNotice.disabled = false;
+  readingExpiry.disabled = false;
+  readingMaxAge.disabled = !readingExpiry.checked;
 }
 
 async function refreshReadingCount() {
@@ -29,7 +30,7 @@ async function refreshReadingCount() {
 }
 
 chrome.storage.local.get(settingsKey).then(async data => {
-  restoreReading.checked = data[settingsKey]?.restoreReading !== false;
+  restoreReading.checked = data[settingsKey]?.restoreReading === true;
   readingNotice.checked = data[settingsKey]?.showReadingNotice !== false;
   readingExpiry.checked = data[settingsKey]?.readingExpiryEnabled !== false;
   readingMaxAge.value = maxAgeHours(data[settingsKey]);

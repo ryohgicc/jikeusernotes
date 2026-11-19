@@ -3,7 +3,7 @@
   const prefix = 'jkn.reading.';
   const settingsKey = 'jkn.settings';
   const resetKey = 'jkn.readingResetAt';
-  const defaults = { restoreReading: true, showReadingNotice: true, readingExpiryEnabled: true, readingMaxAgeHours: 24 };
+  const defaults = { restoreReading: false, showReadingNotice: true, readingExpiryEnabled: true, readingMaxAgeHours: 24 };
   let settings = { ...defaults };
   let state = null;
   let notice;
@@ -101,12 +101,16 @@
     return defaults.readingMaxAgeHours;
   }
 
+  function normalizeSettings(value) {
+    return { ...defaults, ...value, restoreReading: value?.restoreReading === true, readingMaxAgeHours: maxAgeHours(value) };
+  }
+
   function expired(record) {
     return settings.readingExpiryEnabled !== false && Date.now() - record.savedAt > settings.readingMaxAgeHours * 3600000;
   }
 
   function persist(s) {
-    if (!s?.snapshot || !s.canSave || !settings.restoreReading) return;
+    if (!s?.snapshot || !s.canSave) return;
     chrome.storage.local.set({ [s.key]: s.snapshot }).catch(() => {});
   }
 
@@ -268,10 +272,11 @@
     job.nextStep = now + 350;
   }
 
-  function begin(s, record) {
-    if (state !== s || !settings.restoreReading || keyNow() !== s.key) return;
+  function begin(s, record, manual = false) {
+    if (state !== s || keyNow() !== s.key) return;
     s.loading = false;
     s.record = validRecord(record) ? record : null;
+    if (!settings.restoreReading && !manual) { s.canSave = !s.record || s.interacted; return; }
     // Keep stale bookmarks unchanged until the user actually browses again.
     if (s.record && expired(s.record) && !s.interacted) { s.record = null; s.canSave = false; return; }
     if (!s.record || s.interacted) { s.canSave = true; return; }
@@ -283,20 +288,25 @@
   }
 
   function restoreCurrent() {
-    if (!state || state.loading || state.job || !settings.restoreReading) return;
+    update();
+    if (!state || state.loading || state.job) return;
+    clearTimeout(saveTimer);
     clearDivider();
     state.interacted = false;
     state.canSave = false;
+    state.loading = true;
+    state.snapshot = null;
     state.record = null;
     const current = state;
+    const generation = resetGeneration;
     chrome.storage.local.get(current.key).then(data => {
-      if (state === current) begin(current, data[current.key]);
-    }).catch(() => {});
+      if (generation === resetGeneration) begin(current, data[current.key], true);
+    }).catch(() => { if (state === current) current.loading = false; });
   }
 
   function update() {
     if (!ready) return;
-    const key = settings.restoreReading ? keyNow() : null;
+    const key = keyNow();
     if ((state?.key || null) !== key) {
       if (state) { persist(state); cancel(state); }
       clearTimeout(saveTimer);
@@ -335,8 +345,12 @@
     positionDivider();
   }
 
+  function isToolEvent(event) {
+    return event.composedPath().some(node => node?.matches?.('[data-jkn-reading-ui], [data-jkn-floating], [data-jkn-editor]'));
+  }
+
   function userIntent(event) {
-    if (!event.isTrusted || event.composedPath().some(node => node?.hasAttribute?.('data-jkn-reading-ui'))) return;
+    if (!event.isTrusted || isToolEvent(event)) return;
     if (event.type === 'keydown' && (!['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '].includes(event.key) ||
       event.target.closest?.('input, textarea, select, [contenteditable="true"]'))) return;
     update();
@@ -365,7 +379,7 @@
     document.addEventListener(type, userIntent, { capture: true, passive: true });
   }
   // Store the last sampled feed rather than the newly mounted detail page.
-  document.addEventListener('click', () => { if (state) { sample(state); persist(state); } }, true);
+  document.addEventListener('click', event => { if (state && !isToolEvent(event)) { sample(state); persist(state); } }, true);
   addEventListener('pagehide', () => { if (state) { sample(state); persist(state); } });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
@@ -376,12 +390,24 @@
   });
   addEventListener('resize', positionDivider);
   addEventListener('jkn-restore-reading', restoreCurrent);
+  addEventListener('jkn-reading-top', () => {
+    cancel(state);
+    clearTimeout(saveTimer);
+    if (state) { state.canSave = false; state.snapshot = null; }
+  });
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     if (changes[settingsKey]) {
-      settings = { ...defaults, ...changes[settingsKey].newValue, readingMaxAgeHours: maxAgeHours(changes[settingsKey].newValue) };
-      if (!settings.restoreReading) { cancel(state); clearTimeout(saveTimer); state = null; hideNotice(); clearDivider(); }
+      const wasRestoring = settings.restoreReading;
+      settings = normalizeSettings(changes[settingsKey].newValue);
+      if (wasRestoring && !settings.restoreReading) {
+        cancel(state);
+        clearTimeout(saveTimer);
+        hideNotice();
+        clearDivider();
+      }
+      if (!wasRestoring && settings.restoreReading) restoreCurrent();
       if (state?.job && expired(state.record)) cancel(state);
       if (!settings.showReadingNotice && !state?.job) hideNotice();
       update();
@@ -396,7 +422,7 @@
     }
   });
   chrome.storage.local.get(settingsKey).then(data => {
-    settings = { ...defaults, ...data[settingsKey], readingMaxAgeHours: maxAgeHours(data[settingsKey]) };
+    settings = normalizeSettings(data[settingsKey]);
     ready = true;
     update();
     // Also covers SPA history changes which don't necessarily mutate the DOM.

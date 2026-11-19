@@ -15,9 +15,10 @@ before(async () => {
 });
 after(async () => { await browser?.close(); });
 
-async function session(seed = {}) {
+async function session(seed = {}, autoRestore = true) {
   const context = await browser.newContext({ viewport: { width: 1000, height: 720 } });
-  const data = structuredClone(seed);
+  // Existing restoration cases opt in explicitly; the product default is off.
+  const data = structuredClone(autoRestore ? { ...seed, 'jkn.settings': { restoreReading: true, ...(seed['jkn.settings'] || {}) } } : seed);
   const errors = [];
   await context.exposeBinding('__storageCall', async (_, request) => {
     if (request.method === 'get') {
@@ -87,6 +88,25 @@ test('records internal scroller anchor; reload with prepended content restores I
     assert.equal(s.data[recordKey()].id, 'post-2');
     // A virtual wrapper keeps its ID when its child content is unmounted.
     assert.ok(await returned.locator('[data-jkn-post]').count() > 0);
+  } finally { await s.close(); }
+});
+
+test('default records reading position without auto-restoring; manual restore still works', async () => {
+  const s = await session({}, false);
+  try {
+    const page = await s.open();
+    await page.locator('#viewport').evaluate(root => root.scrollTo(0, 980));
+    await page.waitForTimeout(700);
+    assert.equal(s.data[recordKey()].id, 'post-2');
+    const original = structuredClone(s.data[recordKey()]);
+    await page.close();
+    const returned = await s.open();
+    await returned.waitForTimeout(1200);
+    assert.equal(await returned.locator('#viewport').evaluate(root => root.scrollTop), 0);
+    assert.deepEqual(s.data[recordKey()], original, 'opening the feed must not replace the previous visit');
+    await returned.evaluate(() => window.dispatchEvent(new CustomEvent('jkn-restore-reading')));
+    await restored(returned);
+    assert.ok(Math.abs(await offset(returned, 'post-2') - original.offset) <= 2);
   } finally { await s.close(); }
 });
 
@@ -228,6 +248,10 @@ test('settings disable restoration live; clearing reading data preserves notes a
     await page.evaluate(() => chrome.storage.local.set({ 'jkn.settings': { restoreReading: false } }));
     await page.waitForTimeout(1000);
     assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), 0);
+    await page.mouse.move(500, 300);
+    await page.mouse.wheel(0, 450);
+    await page.waitForTimeout(700);
+    assert.equal(s.data[recordKey()].id, 'post-1', 'turning auto restore off still records browsing');
     await page.evaluate(() => chrome.storage.local.set({ 'jkn.settings': { restoreReading: true } }));
     await page.waitForTimeout(250);
     await page.evaluate(async () => {
@@ -241,7 +265,7 @@ test('settings disable restoration live; clearing reading data preserves notes a
   } finally { await s.close(); }
 });
 
-test('unsupported routes, missing account and disabled setting do not scroll or save', async () => {
+test('unsupported routes, missing account and disabled auto restore do not jump', async () => {
   for (const mode of ['detail', 'account', 'disabled']) {
     const s = await session({ [recordKey()]: bookmark('post-20', 6140), ...(mode === 'disabled' ? { 'jkn.settings': { restoreReading: false } } : {}) });
     try {
@@ -255,7 +279,7 @@ test('unsupported routes, missing account and disabled setting do not scroll or 
 
 test('reading expiry defaults to 24 hours, obeys hourly limits and supports legacy settings', async () => {
   for (const scenario of [
-    { age: 25, settings: {}, restores: false },
+    { age: 25, settings: { restoreReading: true }, restores: false },
     { age: 23, settings: {}, restores: true },
     { age: 13, settings: { readingMaxAgeHours: 12 }, restores: false },
     { age: 30, settings: { readingMaxAgeHours: 36 }, restores: true },
@@ -305,7 +329,7 @@ test('shortening expiry cancels a pending restore; manual browsing creates a fre
   try {
     const page = await s.open();
     await page.waitForSelector('[data-jkn-reading-ui]');
-    await page.evaluate(() => chrome.storage.local.set({ 'jkn.settings': { readingMaxAgeHours: 12 } }));
+    await page.evaluate(() => chrome.storage.local.set({ 'jkn.settings': { restoreReading: true, readingMaxAgeHours: 12 } }));
     await page.waitForTimeout(1200);
     assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), 0);
     assert.equal(await page.locator('[data-jkn-reading-ui]').count(), 0);
@@ -374,8 +398,8 @@ test('popup saves settings, clears reading positions and exports notes without r
     await page.locator('#restore-reading').uncheck();
     await page.waitForFunction(() => document.querySelector('#reading-status').textContent.includes('已保存'));
     assert.equal(s.data['jkn.settings'].restoreReading, false);
-    assert.equal(await page.locator('#reading-expiry').isDisabled(), true);
-    assert.equal(await page.locator('#reading-max-age').isDisabled(), true);
+    assert.equal(await page.locator('#reading-expiry').isDisabled(), false);
+    assert.equal(await page.locator('#reading-max-age').isDisabled(), false);
     await page.locator('#clear-reading').click();
     await page.waitForFunction(() => document.querySelector('#reading-status').textContent.includes('已清除'));
     assert.equal(s.data[recordKey()], undefined);

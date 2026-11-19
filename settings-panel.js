@@ -36,7 +36,8 @@
     <section class="jkn-settings-panel" aria-label="即刻私人备注设置">
       <div class="heading"><h1>即刻私人备注</h1><button class="close" type="button" aria-label="关闭">×</button></div>
       <h2>阅读位置</h2>
-      <label class="toggle"><input id="restore-reading" type="checkbox" disabled>自动记录并恢复阅读位置</label>
+      <label class="toggle"><input id="restore-reading" type="checkbox" disabled>自动恢复阅读位置（默认关闭）</label>
+      <p>阅读位置默认会在本机自动记录；打开此开关后，进入信息流时才会自动跳转到上次位置。</p>
       <label class="toggle"><input id="reading-expiry" type="checkbox" disabled>限制阅读记录有效期</label>
       <label class="age-setting" for="reading-max-age">超过 <input id="reading-max-age" type="number" min="1" max="8760" step="1" value="24" required disabled> 小时不自动恢复</label>
       <p>从上次记录时间起计算，默认 24 小时，可设 1～8760 小时。关闭有效期限制后，记录长期有效。</p>
@@ -64,8 +65,9 @@
 
     function enableReadingControls() {
       restoreReading.disabled = false;
-      readingNotice.disabled = readingExpiry.disabled = !restoreReading.checked;
-      readingMaxAge.disabled = !restoreReading.checked || !readingExpiry.checked;
+      readingNotice.disabled = false;
+      readingExpiry.disabled = false;
+      readingMaxAge.disabled = !readingExpiry.checked;
     }
     async function refreshReadingCount() {
       const data = await chrome.storage.local.get(null);
@@ -81,7 +83,7 @@
 
     chrome.storage.local.get(settingsKey).then(async data => {
       const settings = data[settingsKey] || {};
-      restoreReading.checked = settings.restoreReading !== false;
+      restoreReading.checked = settings.restoreReading === true;
       readingNotice.checked = settings.showReadingNotice !== false;
       readingExpiry.checked = settings.readingExpiryEnabled !== false;
       readingMaxAge.value = maxAgeHours(settings);

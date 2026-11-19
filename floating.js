@@ -103,6 +103,7 @@
   });
   shadow.querySelector('[data-action="top"]').addEventListener('click', () => {
     closeMenu();
+    window.dispatchEvent(new CustomEvent('jkn-reading-top'));
     scrollRoot()?.scrollTo({ top: 0, behavior: 'smooth' });
   });
   shadow.querySelector('[data-action="restore"]').addEventListener('click', () => {

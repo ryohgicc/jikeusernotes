@@ -31,6 +31,8 @@ test('installed MV3 extension uses separate execution worlds and real extension 
     });
     const popup = await context.newPage();
     await popup.goto(`chrome-extension://${id}/popup.html`);
+    await popup.waitForFunction(() => !document.querySelector('#restore-reading').disabled);
+    assert.equal(await popup.locator('#restore-reading').isChecked(), false);
     const page = await context.newPage();
     await page.goto('https://web.okjike.com/following');
     await page.waitForSelector('[data-jkn-post]');
@@ -47,6 +49,7 @@ test('installed MV3 extension uses separate execution worlds and real extension 
     await floating.locator('[data-action="settings"]').click();
     await floating.locator('#reading-max-age').waitFor();
     assert.equal(await floating.locator('#reading-max-age').inputValue(), '24');
+    assert.equal(await floating.locator('#restore-reading').isChecked(), false);
     await floating.locator('.close').click();
     assert.equal(await floating.locator('.overlay').evaluate(node => node.classList.contains('open')), false);
     await page.waitForTimeout(300);
@@ -61,6 +64,14 @@ test('installed MV3 extension uses separate execution worlds and real extension 
     assert.equal(original?.id, 'post-2', 'reading position was durably saved before reload');
     withNewPost = true;
     await page.reload();
+    await page.waitForTimeout(1200);
+    assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), 0);
+    const retained = await popup.evaluate(async () => (await chrome.storage.local.get(null))['jkn.reading.account-a:/following']);
+    assert.equal(retained.id, original.id);
+    assert.equal(retained.offset, original.offset);
+    assert.equal(retained.top, original.top);
+    await floating.locator('.ball').click();
+    await floating.locator('[data-action="restore"]').click();
     await page.waitForFunction(() => {
       const card = document.querySelector('[data-jkn-post="post-2"]');
       return card && Math.abs(card.getBoundingClientRect().top + 240) <= 2;
@@ -73,11 +84,24 @@ test('installed MV3 extension uses separate execution worlds and real extension 
     await page.waitForSelector('[data-jkn-reading-divider]');
     const marker = await page.locator('[data-jkn-reading-divider]').boundingBox();
     assert.ok(marker && Math.abs(marker.y) <= 2, 'real extension displays the reading marker in the feed');
+    // Returning to the top must preserve the bookmark used by manual restore.
+    await floating.locator('.ball').click();
+    await floating.locator('[data-action="top"]').click();
+    await page.waitForFunction(() => document.querySelector('#viewport').scrollTop === 0);
+    await page.waitForTimeout(500);
+    await floating.locator('.ball').click();
+    await floating.locator('[data-action="restore"]').click();
+    await page.waitForFunction(() => {
+      const card = document.querySelector('[data-jkn-post="post-2"]');
+      return card && Math.abs(card.getBoundingClientRect().top + 240) <= 2;
+    });
 
     // An existing note still renders without parentheses in the isolated world.
     await popup.evaluate(() => chrome.storage.local.set({ 'jkn.note.author': '朋友' }));
     await page.waitForFunction(() => [...document.querySelectorAll('.jkn-note')].some(node => node.textContent === '朋友'));
     // Popup controls act on the real content script, without a mock API.
+    await popup.locator('#restore-reading').check();
+    await popup.waitForFunction(() => document.querySelector('#reading-status').textContent.includes('已保存'));
     await popup.locator('#restore-reading').uncheck();
     await popup.waitForFunction(() => document.querySelector('#reading-status').textContent.includes('已保存'));
     await page.waitForFunction(() => !document.querySelector('[data-jkn-reading-divider]'));
