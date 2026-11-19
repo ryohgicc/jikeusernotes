@@ -6,6 +6,10 @@ Chrome / Edge 本地扩展。在即刻网页版昵称后显示「+ 备注」，�
 
 实际使用截图：备注显示在用户名旁边；个人主页的分类导航标签（动态、相册、收藏、我的圈子）旁边不会显示备注。
 
+![首页动态中的私人备注](docs/images/following-notes.png)
+
+个人主页中的显示效果：
+
 <img src="docs/images/profile-notes.png" alt="个人主页中的私人备注" width="680">
 
 ## 安装
