@@ -20,6 +20,7 @@
 - `reading-bridge.js`：页面 MAIN 环境，只读已渲染 React props 的动态 ID，在虚拟列表容器添加 `data-jkn-post`，不接触认证数据或内部查询缓存。
 - `reading.js`：隔离环境中的阅读恢复，`jkn.reading.<account>:<route>` -> `{version:1,id,offset,top,savedAt}`。此命名空间不得用于备注备份。
 - `jkn.settings`：`restoreReading`、`showReadingNotice` 默认为 true；关闭后停止记录与恢复，保留记录。
+- `jkn.settings` 有效期：`readingExpiryEnabled` 默认为 true，`readingMaxAgeDays` 默认为 7，须为 1～365 的整数。过期记录不自动恢复或续期，主动浏览后才更新；关闭有效期限制则长期有效。
 - `jkn.readingResetAt`：清除通知；活动页面须放弃待保存快照与恢复任务，直到用户主动浏览。
 - `popup.html` / `popup.js`：设置、清除阅读记录与备注备份。清除或导入不能影响其他命名空间。
 - 真实即刻适配变化须更新 fixtures 与 README；不要把模拟页面通过描述成用户登录环境已验证。

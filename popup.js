@@ -6,7 +6,19 @@ const settingsKey = 'jkn.settings';
 const readingPrefix = 'jkn.reading.';
 const restoreReading = document.querySelector('#restore-reading');
 const readingNotice = document.querySelector('#reading-notice');
+const readingExpiry = document.querySelector('#reading-expiry');
+const readingMaxAge = document.querySelector('#reading-max-age');
 const clearReading = document.querySelector('#clear-reading');
+
+function maxAgeDays(value) {
+  return Number.isInteger(value) && value >= 1 && value <= 365 ? value : 7;
+}
+
+function enableReadingControls() {
+  restoreReading.disabled = false;
+  readingNotice.disabled = readingExpiry.disabled = !restoreReading.checked;
+  readingMaxAge.disabled = !restoreReading.checked || !readingExpiry.checked;
+}
 
 async function refreshReadingCount() {
   const data = await chrome.storage.local.get(null);
@@ -17,23 +29,40 @@ async function refreshReadingCount() {
 chrome.storage.local.get(settingsKey).then(async data => {
   restoreReading.checked = data[settingsKey]?.restoreReading !== false;
   readingNotice.checked = data[settingsKey]?.showReadingNotice !== false;
+  readingExpiry.checked = data[settingsKey]?.readingExpiryEnabled !== false;
+  readingMaxAge.value = maxAgeDays(data[settingsKey]?.readingMaxAgeDays);
   await refreshReadingCount();
-  restoreReading.disabled = readingNotice.disabled = clearReading.disabled = false;
+  enableReadingControls();
+  clearReading.disabled = false;
 }).catch(() => { readingStatus.textContent = '读取设置失败，请重新打开扩展。'; });
 
-for (const input of [restoreReading, readingNotice]) {
+for (const input of [restoreReading, readingNotice, readingExpiry, readingMaxAge]) {
   input.addEventListener('change', async () => {
-    restoreReading.disabled = readingNotice.disabled = true;
+    if (input === readingMaxAge && !readingMaxAge.checkValidity()) {
+      readingMaxAge.setAttribute('aria-invalid', 'true');
+      readingStatus.textContent = '请输入 1～365 之间的整数天数。';
+      return;
+    }
+    restoreReading.disabled = readingNotice.disabled = readingExpiry.disabled = readingMaxAge.disabled = true;
+    let previous;
     try {
       const data = await chrome.storage.local.get(settingsKey);
+      previous = data[settingsKey] || {};
+      const days = Number(readingMaxAge.value);
+      const savedDays = Number.isInteger(days) && days >= 1 && days <= 365 ? days : maxAgeDays(previous.readingMaxAgeDays);
       await chrome.storage.local.set({ [settingsKey]: {
-        ...data[settingsKey], restoreReading: restoreReading.checked, showReadingNotice: readingNotice.checked
+        ...previous, restoreReading: restoreReading.checked, showReadingNotice: readingNotice.checked,
+        readingExpiryEnabled: readingExpiry.checked,
+        readingMaxAgeDays: savedDays
       } });
+      readingMaxAge.value = savedDays;
+      readingMaxAge.removeAttribute('aria-invalid');
       readingStatus.textContent = '设置已保存。';
     } catch {
-      input.checked = !input.checked;
+      if (input === readingMaxAge) readingMaxAge.value = maxAgeDays(previous?.readingMaxAgeDays);
+      else input.checked = !input.checked;
       readingStatus.textContent = '保存失败，请重试。';
-    } finally { restoreReading.disabled = readingNotice.disabled = false; }
+    } finally { enableReadingControls(); }
   });
 }
 clearReading.addEventListener('click', async () => {

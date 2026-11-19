@@ -205,6 +205,53 @@ test('unsupported routes, missing account and disabled setting do not scroll or 
   }
 });
 
+test('reading expiry defaults to seven days, obeys custom limits and can be disabled', async () => {
+  for (const scenario of [
+    { age: 8, settings: {}, restores: false },
+    { age: 2, settings: { readingMaxAgeDays: 1 }, restores: false },
+    { age: 2, settings: { readingMaxAgeDays: 3 }, restores: true },
+    { age: 30, settings: { readingExpiryEnabled: false }, restores: true },
+    { age: 8, settings: { readingMaxAgeDays: 0 }, restores: false }
+  ]) {
+    const record = { ...bookmark('post-2', 740), savedAt: Date.now() - scenario.age * 86400000 };
+    const s = await session({ [recordKey()]: record, 'jkn.settings': scenario.settings });
+    try {
+      const page = await s.open();
+      if (scenario.restores) {
+        await restored(page);
+        assert.ok(Math.abs(await offset(page, 'post-2')) <= 2);
+      } else {
+        await page.waitForTimeout(1100);
+        assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), 0);
+        assert.equal(await page.locator('[data-jkn-reading-ui]').count(), 0);
+        // Native scrolling must not renew a stale bookmark without user intent.
+        await page.locator('#viewport').evaluate(root => root.scrollTo(0, 450));
+        await page.waitForTimeout(600);
+        assert.deepEqual(s.data[recordKey()], record);
+      }
+    } finally { await s.close(); }
+  }
+});
+
+test('shortening expiry cancels a pending restore; manual browsing creates a fresh bookmark', async () => {
+  const record = { ...bookmark('post-2', 740), savedAt: Date.now() - 2 * 86400000 };
+  const s = await session({ [recordKey()]: record });
+  try {
+    const page = await s.open();
+    await page.waitForSelector('[data-jkn-reading-ui]');
+    await page.evaluate(() => chrome.storage.local.set({ 'jkn.settings': { readingMaxAgeDays: 1 } }));
+    await page.waitForTimeout(1200);
+    assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), 0);
+    assert.equal(await page.locator('[data-jkn-reading-ui]').count(), 0);
+    assert.deepEqual(s.data[recordKey()], record);
+    await page.mouse.move(500, 300);
+    await page.mouse.wheel(0, 450);
+    await page.waitForTimeout(800);
+    assert.equal(s.data[recordKey()].id, 'post-1');
+    assert.ok(s.data[recordKey()].savedAt > record.savedAt);
+  } finally { await s.close(); }
+});
+
 test('a background tab waits until it is visible before spending its restoration budget', async () => {
   const s = await session({ [recordKey()]: bookmark('post-2', 740) });
   try {
@@ -234,9 +281,35 @@ test('popup saves settings, clears reading positions and exports notes without r
     await s.context.route('https://web.okjike.com/popup.html', route => route.fulfill({ contentType: 'text/html', body: html }));
     await page.goto('https://web.okjike.com/popup.html');
     await page.addScriptTag({ path: path.join(repo, 'popup.js') });
+    await page.waitForFunction(() => !document.querySelector('#restore-reading').disabled);
+    assert.equal(await page.locator('#reading-max-age').inputValue(), '7');
+    assert.equal(await page.locator('#reading-expiry').isChecked(), true);
+    await page.locator('#reading-max-age').fill('3');
+    await page.locator('#reading-max-age').press('Tab');
+    await page.waitForFunction(() => document.querySelector('#reading-status').textContent.includes('已保存'));
+    assert.equal(s.data['jkn.settings'].readingMaxAgeDays, 3);
+    for (const invalid of ['0', '366', '1.5', '']) {
+      await page.locator('#reading-max-age').fill(invalid);
+      await page.locator('#reading-max-age').press('Tab');
+      await page.waitForFunction(() => document.querySelector('#reading-status').textContent.includes('整数'));
+      assert.equal(s.data['jkn.settings'].readingMaxAgeDays, 3);
+    }
+    await page.locator('#reading-expiry').uncheck();
+    await page.waitForFunction(() => document.querySelector('#reading-status').textContent.includes('已保存'));
+    assert.equal(s.data['jkn.settings'].readingExpiryEnabled, false);
+    assert.equal(await page.locator('#reading-max-age').isDisabled(), true);
+    await page.locator('#reading-expiry').check();
+    await page.waitForFunction(() => !document.querySelector('#reading-max-age').disabled);
+    assert.equal(await page.locator('#reading-max-age').inputValue(), '3');
+    await page.reload();
+    await page.addScriptTag({ path: path.join(repo, 'popup.js') });
+    await page.waitForFunction(() => !document.querySelector('#restore-reading').disabled);
+    assert.equal(await page.locator('#reading-max-age').inputValue(), '3');
     await page.locator('#restore-reading').uncheck();
     await page.waitForFunction(() => document.querySelector('#reading-status').textContent.includes('已保存'));
     assert.equal(s.data['jkn.settings'].restoreReading, false);
+    assert.equal(await page.locator('#reading-expiry').isDisabled(), true);
+    assert.equal(await page.locator('#reading-max-age').isDisabled(), true);
     await page.locator('#clear-reading').click();
     await page.waitForFunction(() => document.querySelector('#reading-status').textContent.includes('已清除'));
     assert.equal(s.data[recordKey()], undefined);

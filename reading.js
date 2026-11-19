@@ -3,7 +3,7 @@
   const prefix = 'jkn.reading.';
   const settingsKey = 'jkn.settings';
   const resetKey = 'jkn.readingResetAt';
-  const defaults = { restoreReading: true, showReadingNotice: true };
+  const defaults = { restoreReading: true, showReadingNotice: true, readingExpiryEnabled: true, readingMaxAgeDays: 7 };
   let settings = { ...defaults };
   let state = null;
   let notice;
@@ -91,6 +91,12 @@
       Number.isFinite(record.top) && record.top >= 0 &&
       Number.isFinite(record.offset) && Math.abs(record.offset) < 100000 &&
       Number.isFinite(record.savedAt);
+  }
+
+  function expired(record) {
+    const days = Number.isInteger(settings.readingMaxAgeDays) && settings.readingMaxAgeDays >= 1 && settings.readingMaxAgeDays <= 365
+      ? settings.readingMaxAgeDays : defaults.readingMaxAgeDays;
+    return settings.readingExpiryEnabled !== false && Date.now() - record.savedAt > days * 86400000;
   }
 
   function persist(s) {
@@ -214,6 +220,8 @@
     if (state !== s || !settings.restoreReading || keyNow() !== s.key) return;
     s.loading = false;
     s.record = validRecord(record) ? record : null;
+    // Keep stale bookmarks unchanged until the user actually browses again.
+    if (s.record && expired(s.record) && !s.interacted) { s.record = null; s.canSave = false; return; }
     if (!s.record || s.interacted) { s.canSave = true; return; }
     s.job = {
       began: Date.now(), pausedAt: document.hidden ? Date.now() : null,
@@ -305,6 +313,7 @@
     if (changes[settingsKey]) {
       settings = { ...defaults, ...changes[settingsKey].newValue };
       if (!settings.restoreReading) { cancel(state); clearTimeout(saveTimer); state = null; hideNotice(); }
+      if (state?.job && expired(state.record)) cancel(state);
       if (!settings.showReadingNotice && !state?.job) hideNotice();
       update();
     }
