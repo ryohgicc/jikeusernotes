@@ -19,7 +19,7 @@
 
   function render(button, id, name) {
     const note = notes.get(id) || '';
-    const label = note ? `（${note}）` : '+ 备注';
+    const label = note || '+ 备注';
     if (button.textContent !== label) button.textContent = label;
     const title = `${name}：${note || '尚未添加备注'}；点击修改`;
     if (button.title !== title) {
