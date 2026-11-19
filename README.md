@@ -10,7 +10,7 @@ Chrome / Edge 本地扩展。在即刻网页版昵称后显示「+ 备注」，�
 
 个人主页中的显示效果：
 
-<img src="docs/images/profile-notes.png" alt="个人主页中的私人备注" width="680">
+![个人主页中的私人备注](docs/images/profile-notes-999a625e.png)
 
 ## 安装
 
