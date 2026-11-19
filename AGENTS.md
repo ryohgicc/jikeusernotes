@@ -19,6 +19,7 @@
 - `content.js`：昵称备注，`jkn.note.<username>` -> 备注原文。不要更改用户已有备注。
 - `reading-bridge.js`：页面 MAIN 环境，只读已渲染 React props 的动态 ID，在虚拟列表容器添加 `data-jkn-post`，不接触认证数据或内部查询缓存。
 - `reading.js`：隔离环境中的阅读恢复，`jkn.reading.<account>:<route>` -> `{version:1,id,offset,top,savedAt}`。此命名空间不得用于备注备份。
+- 阅读分割线仅在精确恢复成功后显示，绑定本次恢复的动态 ID 与原偏移；覆盖绘制、不改变列表高度或拦截点击。滚动与虚拟列表重建后重新定位，撤销、切换页面或账号、关闭恢复和清除记录时移除。
 - `jkn.settings`：`restoreReading`、`showReadingNotice` 默认为 true；关闭后停止记录与恢复，保留记录。
 - `jkn.settings` 有效期：`readingExpiryEnabled` 默认为 true，`readingMaxAgeDays` 默认为 7，须为 1～365 的整数。过期记录不自动恢复或续期，主动浏览后才更新；关闭有效期限制则长期有效。
 - `jkn.readingResetAt`：清除通知；活动页面须放弃待保存快照与恢复任务，直到用户主动浏览。

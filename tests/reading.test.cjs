@@ -97,6 +97,7 @@ test('SPA departure/return, root redirect alias, separate feeds and account isol
     await restored(page);
     await page.evaluate(() => window.fixture.navigate('/notification'));
     await page.waitForTimeout(300);
+    assert.equal(await page.locator('[data-jkn-reading-divider]').count(), 0);
     await page.evaluate(() => window.fixture.navigate('/explore'));
     await page.waitForTimeout(300);
     await page.locator('#viewport').evaluate(root => root.scrollTo(0, 450));
@@ -111,6 +112,7 @@ test('SPA departure/return, root redirect alias, separate feeds and account isol
     await page.waitForTimeout(700);
     assert.equal(s.data[recordKey('/following', 'account-b')].id, 'post-4');
     assert.equal(s.data[recordKey()].id, 'post-2');
+    assert.equal(await page.locator('[data-jkn-reading-divider]').count(), 0);
   } finally { await s.close(); }
 });
 
@@ -132,9 +134,53 @@ test('corrects layout shifts while restoring; undo returns to entry position', a
     await page.evaluate(() => window.fixture.layout(160));
     await restored(page);
     assert.ok(Math.abs(await offset(page, 'post-2')) <= 2);
+    assert.equal(await page.locator('[data-jkn-reading-divider]').count(), 1);
     await page.locator('[data-jkn-reading-ui] button').click();
     await page.waitForTimeout(350);
     assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), 0);
+    assert.equal(await page.locator('[data-jkn-reading-divider]').count(), 0);
+  } finally { await s.close(); }
+});
+
+test('reading divider marks a partially read post, follows layout and virtualization without shifting the feed', async () => {
+  const s = await session({ [recordKey()]: bookmark('post-2', 860, -120), 'jkn.settings': { showReadingNotice: false } });
+  try {
+    const page = await s.open();
+    const marker = page.locator('[data-jkn-reading-divider] [role="separator"]');
+    await marker.waitFor({ state: 'visible' });
+    assert.equal(await marker.innerText(), '上次读到这里');
+    assert.equal(await page.locator('[data-jkn-reading-ui]').count(), 0, 'divider is independent of transient notices');
+    assert.ok(Math.abs(await offset(page, 'post-2') + 120) <= 2);
+    assert.equal(await page.locator('#viewport').evaluate(root => root.scrollHeight), 9140);
+    assert.ok(Math.abs((await marker.boundingBox()).y) <= 2, 'mid-post reading boundary is visible at entry');
+    assert.equal(await page.locator('[data-jkn-reading-divider]').evaluate(node => getComputedStyle(node).pointerEvents), 'none');
+
+    await page.mouse.move(500, 300);
+    await page.mouse.wheel(0, -100);
+    await page.waitForFunction(() => {
+      const line = document.querySelector('[data-jkn-reading-divider]')?.shadowRoot?.querySelector('[role="separator"]');
+      return line && Math.abs(line.getBoundingClientRect().top - 100) <= 2;
+    });
+    await page.waitForTimeout(500);
+    assert.ok(Math.abs(s.data[recordKey()].offset + 20) <= 2, 'new bookmark does not move the previous-reading marker');
+
+    await page.evaluate(() => window.fixture.layout(160));
+    await page.waitForFunction(() => {
+      const line = document.querySelector('[data-jkn-reading-divider]')?.shadowRoot?.querySelector('[role="separator"]');
+      const post = document.querySelector('[data-jkn-post="post-2"]');
+      return line && post && Math.abs(line.getBoundingClientRect().top - post.getBoundingClientRect().top - 120) <= 2;
+    });
+    await page.locator('#viewport').evaluate(root => root.scrollTo(0, 4000));
+    await page.waitForFunction(() => document.querySelector('[data-jkn-reading-divider]')?.style.display === 'none');
+    await page.locator('#viewport').evaluate(root => root.scrollTo(0, 1020));
+    await marker.waitFor({ state: 'visible' });
+    assert.ok(Math.abs((await marker.boundingBox()).y) <= 2);
+    assert.equal(await page.locator('[data-jkn-reading-divider]').count(), 1);
+    fs.mkdirSync(path.join(repo, 'test-results'), { recursive: true });
+    await page.screenshot({ path: path.join(repo, 'test-results', 'reading-divider.png') });
+
+    await page.evaluate(() => chrome.storage.local.set({ 'jkn.readingResetAt': Date.now() }));
+    assert.equal(await page.locator('[data-jkn-reading-divider]').count(), 0);
   } finally { await s.close(); }
 });
 
@@ -151,6 +197,7 @@ test('manual wheel interrupts automatic restore immediately without later jumpin
     await page.waitForTimeout(2200);
     assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), top);
     assert.equal(await page.locator('[data-jkn-reading-ui]').count(), 0);
+    assert.equal(await page.locator('[data-jkn-reading-divider]').count(), 0);
   } finally { await s.close(); }
 });
 
@@ -170,6 +217,7 @@ test('cancel preserves saved bookmark; missing post falls back with an honest no
     await fallback.waitForFunction(() => document.querySelector('[data-jkn-reading-ui]')?.shadowRoot?.textContent.includes('近似位置'));
     assert.equal(await fallback.locator('#viewport').evaluate(root => root.scrollTop), 950);
     assert.deepEqual(s.data[recordKey()], record, 'search/fallback must not erase the original bookmark');
+    assert.equal(await fallback.locator('[data-jkn-reading-divider]').count(), 0);
   } finally { await s.close(); }
 });
 
@@ -224,6 +272,7 @@ test('reading expiry defaults to seven days, obeys custom limits and can be disa
         await page.waitForTimeout(1100);
         assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), 0);
         assert.equal(await page.locator('[data-jkn-reading-ui]').count(), 0);
+        assert.equal(await page.locator('[data-jkn-reading-divider]').count(), 0);
         // Native scrolling must not renew a stale bookmark without user intent.
         await page.locator('#viewport').evaluate(root => root.scrollTo(0, 450));
         await page.waitForTimeout(600);

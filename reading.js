@@ -7,6 +7,7 @@
   let settings = { ...defaults };
   let state = null;
   let notice;
+  let divider;
   let noticeTimer;
   let saveTimer;
   let ready = false;
@@ -116,6 +117,51 @@
     notice = null;
   }
 
+  function clearDivider() {
+    divider?.host.remove();
+    divider = null;
+  }
+
+  function positionDivider() {
+    if (!divider) return;
+    const { host, line, owner, id, offset } = divider;
+    const root = owner.root;
+    const target = root?.isConnected && posts(root).find(node => node.getAttribute('data-jkn-post') === id);
+    if (!target || document.hidden) { host.style.display = 'none'; return; }
+    const box = bounds(root);
+    const rect = target.getBoundingClientRect();
+    const rootRect = root === document.scrollingElement ? { left: 0, right: innerWidth } : root.getBoundingClientRect();
+    const left = Math.max(0, rect.left, rootRect.left);
+    const right = Math.min(innerWidth, rect.right, rootRect.right);
+    // A partially read post starts above the viewport: mark the saved reading
+    // boundary inside it, so the line is visible without changing scroll layout.
+    const top = rect.top + Math.max(0, -offset);
+    host.style.display = top + 28 <= box.top || top >= box.bottom || right <= left ? 'none' : 'block';
+    host.style.left = left + 'px';
+    host.style.top = box.top + 'px';
+    host.style.width = (right - left) + 'px';
+    host.style.height = box.height + 'px';
+    line.style.transform = `translateY(${top - box.top}px)`;
+  }
+
+  function showDivider(s) {
+    clearDivider();
+    const host = document.createElement('div');
+    host.dataset.jknReadingDivider = '';
+    const shadow = host.attachShadow({ mode: 'closed' });
+    shadow.innerHTML = `<style>
+      :host { all: initial; position: fixed; z-index: 2147483646; pointer-events: none;
+        overflow: hidden; contain: layout style paint; }
+      div { display: flex; align-items: center; gap: 12px; height: 28px; padding: 0 12px;
+        box-sizing: border-box; font: 12px/1.5 system-ui, sans-serif; color: #856511; }
+      div::before, div::after { content: ''; height: 1px; flex: 1; background: #dcc16a; }
+      span { padding: 3px 10px; border-radius: 12px; background: #fff5cd; white-space: nowrap; }
+    </style><div role="separator" aria-label="上次读到这里"><span>上次读到这里</span></div>`;
+    divider = { host, line: shadow.querySelector('div'), owner: s, id: s.record.id, offset: s.record.offset };
+    document.documentElement.append(host);
+    positionDivider();
+  }
+
   function showNotice(message, action, callback, persistent = false) {
     hideNotice();
     if (!persistent && !settings.showReadingNotice) return;
@@ -154,10 +200,11 @@
     s.job = null;
     // Only exact restoration or subsequent manual scrolling updates the bookmark.
     s.canSave = exact;
-    if (exact) { sample(s); persist(s); }
+    if (exact) { sample(s); persist(s); showDivider(s); }
     showNotice(exact ? '已恢复到上次阅读位置' : '未找到原动态，已回到近似位置', '撤销恢复', () => {
       if (state !== s || !s.root?.isConnected || keyNow() !== s.key) return;
       s.canSave = false;
+      clearDivider();
       setTop(s.root, job.startTop);
     });
   }
@@ -237,6 +284,7 @@
       if (state) { persist(state); cancel(state); }
       clearTimeout(saveTimer);
       hideNotice();
+      clearDivider();
       state = key ? { key, loading: true, canSave: false, snapshot: null, root: null } : null;
       if (state) {
         const current = state;
@@ -267,6 +315,7 @@
         if (Date.now() - s.job.began >= 8000) { cancel(s); showNotice('页面尚未加载，已保留上次阅读记录'); }
       } else advance(s, Date.now());
     }
+    positionDivider();
   }
 
   function userIntent(event) {
@@ -306,13 +355,15 @@
       persist(state);
       if (state?.job) state.job.pausedAt ||= Date.now();
     } else update();
+    positionDivider();
   });
+  addEventListener('resize', positionDivider);
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     if (changes[settingsKey]) {
       settings = { ...defaults, ...changes[settingsKey].newValue };
-      if (!settings.restoreReading) { cancel(state); clearTimeout(saveTimer); state = null; hideNotice(); }
+      if (!settings.restoreReading) { cancel(state); clearTimeout(saveTimer); state = null; hideNotice(); clearDivider(); }
       if (state?.job && expired(state.record)) cancel(state);
       if (!settings.showReadingNotice && !state?.job) hideNotice();
       update();
@@ -323,6 +374,7 @@
       cancel(state);
       if (state) { state.loading = false; state.snapshot = null; state.canSave = false; state.interacted = false; }
       hideNotice();
+      clearDivider();
     }
   });
   chrome.storage.local.get(settingsKey).then(data => {

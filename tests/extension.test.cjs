@@ -55,6 +55,9 @@ test('installed MV3 extension uses separate execution worlds and real extension 
     assert.equal(restored.id, original.id);
     assert.ok(Math.abs(restored.offset - original.offset) <= 2);
     assert.ok(restored.top > original.top, 'anchor restoration accounts for new content above');
+    await page.waitForSelector('[data-jkn-reading-divider]');
+    const marker = await page.locator('[data-jkn-reading-divider]').boundingBox();
+    assert.ok(marker && Math.abs(marker.y) <= 2, 'real extension displays the reading marker in the feed');
 
     // An existing note still renders without parentheses in the isolated world.
     await popup.evaluate(() => chrome.storage.local.set({ 'jkn.note.author': '朋友' }));
@@ -62,6 +65,7 @@ test('installed MV3 extension uses separate execution worlds and real extension 
     // Popup controls act on the real content script, without a mock API.
     await popup.locator('#restore-reading').uncheck();
     await popup.waitForFunction(() => document.querySelector('#reading-status').textContent.includes('已保存'));
+    await page.waitForFunction(() => !document.querySelector('[data-jkn-reading-divider]'));
     await popup.locator('#clear-reading').click();
     await popup.waitForFunction(() => document.querySelector('#reading-status').textContent.includes('已清除'));
     const final = await popup.evaluate(() => chrome.storage.local.get(null));
