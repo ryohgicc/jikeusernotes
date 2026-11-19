@@ -17,8 +17,8 @@ input:disabled { cursor: not-allowed; }
 <h2>阅读位置</h2>
 <label class="toggle"><input id="restore-reading" type="checkbox" disabled>自动记录并恢复阅读位置</label>
 <label class="toggle"><input id="reading-expiry" type="checkbox" disabled>限制阅读记录有效期</label>
-<label class="age-setting" for="reading-max-age">超过 <input id="reading-max-age" type="number" min="1" max="365" step="1" value="7" required disabled> 天不自动恢复</label>
-<p>从上次记录时间起计算，每天为 24 小时，可设 1～365 天。关闭有效期限制后，记录长期有效。</p>
+<label class="age-setting" for="reading-max-age">超过 <input id="reading-max-age" type="number" min="1" max="8760" step="1" value="24" required disabled> 小时不自动恢复</label>
+<p>从上次记录时间起计算，默认 24 小时，可设 1～8760 小时。关闭有效期限制后，记录长期有效。</p>
 <label class="toggle"><input id="reading-notice" type="checkbox" disabled>显示恢复结果与撤销提示</label>
 <p>支持首页动态、发现、个人主页动态。主动滚动会停止恢复；查找期间可随时取消。</p>
 <button id="clear-reading" type="button" disabled>清除阅读位置</button>

@@ -253,15 +253,18 @@ test('unsupported routes, missing account and disabled setting do not scroll or 
   }
 });
 
-test('reading expiry defaults to seven days, obeys custom limits and can be disabled', async () => {
+test('reading expiry defaults to 24 hours, obeys hourly limits and supports legacy settings', async () => {
   for (const scenario of [
-    { age: 8, settings: {}, restores: false },
-    { age: 2, settings: { readingMaxAgeDays: 1 }, restores: false },
-    { age: 2, settings: { readingMaxAgeDays: 3 }, restores: true },
-    { age: 30, settings: { readingExpiryEnabled: false }, restores: true },
-    { age: 8, settings: { readingMaxAgeDays: 0 }, restores: false }
+    { age: 25, settings: {}, restores: false },
+    { age: 23, settings: {}, restores: true },
+    { age: 13, settings: { readingMaxAgeHours: 12 }, restores: false },
+    { age: 30, settings: { readingMaxAgeHours: 36 }, restores: true },
+    { age: 720, settings: { readingExpiryEnabled: false }, restores: true },
+    { age: 25, settings: { readingMaxAgeHours: 0 }, restores: false },
+    { age: 30, settings: { readingMaxAgeDays: 2 }, restores: true },
+    { age: 13, settings: { readingMaxAgeHours: 12, readingMaxAgeDays: 3 }, restores: false }
   ]) {
-    const record = { ...bookmark('post-2', 740), savedAt: Date.now() - scenario.age * 86400000 };
+    const record = { ...bookmark('post-2', 740), savedAt: Date.now() - scenario.age * 3600000 };
     const s = await session({ [recordKey()]: record, 'jkn.settings': scenario.settings });
     try {
       const page = await s.open();
@@ -282,13 +285,27 @@ test('reading expiry defaults to seven days, obeys custom limits and can be disa
   }
 });
 
+test('24-hour expiry compares elapsed milliseconds without calendar rounding', async () => {
+  const now = Date.now();
+  for (const extra of [0, 1]) {
+    const record = { ...bookmark('post-2', 740), savedAt: now - 24 * 3600000 - extra };
+    const s = await session({ [recordKey()]: record });
+    try {
+      const page = await s.open('/following', page => page.clock.setFixedTime(new Date(now)));
+      await page.waitForTimeout(400);
+      assert.equal(await page.locator('[data-jkn-reading-ui]').count(), extra === 0 ? 1 : 0);
+      assert.deepEqual(s.data[recordKey()], record);
+    } finally { await s.close(); }
+  }
+});
+
 test('shortening expiry cancels a pending restore; manual browsing creates a fresh bookmark', async () => {
-  const record = { ...bookmark('post-2', 740), savedAt: Date.now() - 2 * 86400000 };
+  const record = { ...bookmark('post-2', 740), savedAt: Date.now() - 18 * 3600000 };
   const s = await session({ [recordKey()]: record });
   try {
     const page = await s.open();
     await page.waitForSelector('[data-jkn-reading-ui]');
-    await page.evaluate(() => chrome.storage.local.set({ 'jkn.settings': { readingMaxAgeDays: 1 } }));
+    await page.evaluate(() => chrome.storage.local.set({ 'jkn.settings': { readingMaxAgeHours: 12 } }));
     await page.waitForTimeout(1200);
     assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), 0);
     assert.equal(await page.locator('[data-jkn-reading-ui]').count(), 0);
@@ -331,17 +348,17 @@ test('popup saves settings, clears reading positions and exports notes without r
     await page.goto('https://web.okjike.com/popup.html');
     await page.addScriptTag({ path: path.join(repo, 'popup.js') });
     await page.waitForFunction(() => !document.querySelector('#restore-reading').disabled);
-    assert.equal(await page.locator('#reading-max-age').inputValue(), '7');
+    assert.equal(await page.locator('#reading-max-age').inputValue(), '24');
     assert.equal(await page.locator('#reading-expiry').isChecked(), true);
     await page.locator('#reading-max-age').fill('3');
     await page.locator('#reading-max-age').press('Tab');
     await page.waitForFunction(() => document.querySelector('#reading-status').textContent.includes('已保存'));
-    assert.equal(s.data['jkn.settings'].readingMaxAgeDays, 3);
-    for (const invalid of ['0', '366', '1.5', '']) {
+    assert.equal(s.data['jkn.settings'].readingMaxAgeHours, 3);
+    for (const invalid of ['0', '8761', '1.5', '']) {
       await page.locator('#reading-max-age').fill(invalid);
       await page.locator('#reading-max-age').press('Tab');
       await page.waitForFunction(() => document.querySelector('#reading-status').textContent.includes('整数'));
-      assert.equal(s.data['jkn.settings'].readingMaxAgeDays, 3);
+      assert.equal(s.data['jkn.settings'].readingMaxAgeHours, 3);
     }
     await page.locator('#reading-expiry').uncheck();
     await page.waitForFunction(() => document.querySelector('#reading-status').textContent.includes('已保存'));
@@ -367,5 +384,29 @@ test('popup saves settings, clears reading positions and exports notes without r
     const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#export').click()]);
     const result = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
     assert.deepEqual(result.notes, { 'jkn.note.friend': '朋友' });
+  } finally { await s.close(); }
+});
+
+test('popup converts legacy settings to hours and saves without the old day field', async () => {
+  const s = await session({ 'jkn.settings': { readingMaxAgeDays: 3, readingExpiryEnabled: false, futureSetting: 'keep' }, 'jkn.note.friend': '朋友' });
+  try {
+    const page = await s.context.newPage();
+    const html = fs.readFileSync(path.join(repo, 'popup.html'), 'utf8').replace('<script src="popup.js"></script>', '');
+    await s.context.route('https://web.okjike.com/popup.html', route => route.fulfill({ contentType: 'text/html', body: html }));
+    await page.goto('https://web.okjike.com/popup.html');
+    await page.addScriptTag({ path: path.join(repo, 'popup.js') });
+    await page.waitForFunction(() => !document.querySelector('#restore-reading').disabled);
+    assert.equal(await page.locator('#reading-max-age').inputValue(), '72');
+    assert.equal(await page.locator('#reading-expiry').isChecked(), false);
+    await page.locator('#reading-expiry').check();
+    await page.waitForFunction(() => document.querySelector('#reading-status').textContent.includes('已保存'));
+    assert.equal(s.data['jkn.settings'].readingMaxAgeHours, 72);
+    assert.equal('readingMaxAgeDays' in s.data['jkn.settings'], false);
+    assert.equal(s.data['jkn.settings'].futureSetting, 'keep');
+    assert.equal(s.data['jkn.note.friend'], '朋友');
+    await page.reload();
+    await page.addScriptTag({ path: path.join(repo, 'popup.js') });
+    await page.waitForFunction(() => !document.querySelector('#restore-reading').disabled);
+    assert.equal(await page.locator('#reading-max-age').inputValue(), '72');
   } finally { await s.close(); }
 });

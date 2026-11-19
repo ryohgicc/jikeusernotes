@@ -21,7 +21,7 @@
 - `reading.js`：隔离环境中的阅读恢复，`jkn.reading.<account>:<route>` -> `{version:1,id,offset,top,savedAt}`。此命名空间不得用于备注备份。
 - 阅读分割线仅在精确恢复成功后显示，绑定本次恢复的动态 ID 与原偏移；覆盖绘制、不改变列表高度或拦截点击。滚动与虚拟列表重建后重新定位，撤销、切换页面或账号、关闭恢复和清除记录时移除。
 - `jkn.settings`：`restoreReading`、`showReadingNotice` 默认为 true；关闭后停止记录与恢复，保留记录。
-- `jkn.settings` 有效期：`readingExpiryEnabled` 默认为 true，`readingMaxAgeDays` 默认为 7，须为 1～365 的整数。过期记录不自动恢复或续期，主动浏览后才更新；关闭有效期限制则长期有效。
+- `jkn.settings` 有效期：`readingExpiryEnabled` 默认为 true，`readingMaxAgeHours` 默认为 24，须为 1～8760 的整数，按实际经过的毫秒数判断。旧 `readingMaxAgeDays`（1～365）仅用于兼容读取，换算为小时；保存设置时移除旧字段。过期记录不自动恢复或续期，主动浏览后才更新；关闭有效期限制则长期有效。
 - `jkn.readingResetAt`：清除通知；活动页面须放弃待保存快照与恢复任务，直到用户主动浏览。
 - `popup.html` / `popup.js`：设置、清除阅读记录与备注备份。清除或导入不能影响其他命名空间。
 - 真实即刻适配变化须更新 fixtures 与 README；不要把模拟页面通过描述成用户登录环境已验证。

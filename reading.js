@@ -3,7 +3,7 @@
   const prefix = 'jkn.reading.';
   const settingsKey = 'jkn.settings';
   const resetKey = 'jkn.readingResetAt';
-  const defaults = { restoreReading: true, showReadingNotice: true, readingExpiryEnabled: true, readingMaxAgeDays: 7 };
+  const defaults = { restoreReading: true, showReadingNotice: true, readingExpiryEnabled: true, readingMaxAgeHours: 24 };
   let settings = { ...defaults };
   let state = null;
   let notice;
@@ -94,10 +94,15 @@
       Number.isFinite(record.savedAt);
   }
 
+  function maxAgeHours(value) {
+    if (Number.isInteger(value?.readingMaxAgeHours) && value.readingMaxAgeHours >= 1 && value.readingMaxAgeHours <= 8760) return value.readingMaxAgeHours;
+    // Compatibility with previously saved settings; expiry itself uses hours.
+    if (Number.isInteger(value?.readingMaxAgeDays) && value.readingMaxAgeDays >= 1 && value.readingMaxAgeDays <= 365) return value.readingMaxAgeDays * 24;
+    return defaults.readingMaxAgeHours;
+  }
+
   function expired(record) {
-    const days = Number.isInteger(settings.readingMaxAgeDays) && settings.readingMaxAgeDays >= 1 && settings.readingMaxAgeDays <= 365
-      ? settings.readingMaxAgeDays : defaults.readingMaxAgeDays;
-    return settings.readingExpiryEnabled !== false && Date.now() - record.savedAt > days * 86400000;
+    return settings.readingExpiryEnabled !== false && Date.now() - record.savedAt > settings.readingMaxAgeHours * 3600000;
   }
 
   function persist(s) {
@@ -362,7 +367,7 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     if (changes[settingsKey]) {
-      settings = { ...defaults, ...changes[settingsKey].newValue };
+      settings = { ...defaults, ...changes[settingsKey].newValue, readingMaxAgeHours: maxAgeHours(changes[settingsKey].newValue) };
       if (!settings.restoreReading) { cancel(state); clearTimeout(saveTimer); state = null; hideNotice(); clearDivider(); }
       if (state?.job && expired(state.record)) cancel(state);
       if (!settings.showReadingNotice && !state?.job) hideNotice();
@@ -378,7 +383,7 @@
     }
   });
   chrome.storage.local.get(settingsKey).then(data => {
-    settings = { ...defaults, ...data[settingsKey] };
+    settings = { ...defaults, ...data[settingsKey], readingMaxAgeHours: maxAgeHours(data[settingsKey]) };
     ready = true;
     update();
     // Also covers SPA history changes which don't necessarily mutate the DOM.
