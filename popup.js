@@ -1,6 +1,55 @@
 'use strict';
 const prefix = 'jkn.note.';
 const status = document.querySelector('#status');
+const readingStatus = document.querySelector('#reading-status');
+const settingsKey = 'jkn.settings';
+const readingPrefix = 'jkn.reading.';
+const restoreReading = document.querySelector('#restore-reading');
+const readingNotice = document.querySelector('#reading-notice');
+const clearReading = document.querySelector('#clear-reading');
+
+async function refreshReadingCount() {
+  const data = await chrome.storage.local.get(null);
+  const count = Object.keys(data).filter(key => key.startsWith(readingPrefix)).length;
+  clearReading.textContent = `清除阅读位置（${count} 条）`;
+}
+
+chrome.storage.local.get(settingsKey).then(async data => {
+  restoreReading.checked = data[settingsKey]?.restoreReading !== false;
+  readingNotice.checked = data[settingsKey]?.showReadingNotice !== false;
+  await refreshReadingCount();
+  restoreReading.disabled = readingNotice.disabled = clearReading.disabled = false;
+}).catch(() => { readingStatus.textContent = '读取设置失败，请重新打开扩展。'; });
+
+for (const input of [restoreReading, readingNotice]) {
+  input.addEventListener('change', async () => {
+    restoreReading.disabled = readingNotice.disabled = true;
+    try {
+      const data = await chrome.storage.local.get(settingsKey);
+      await chrome.storage.local.set({ [settingsKey]: {
+        ...data[settingsKey], restoreReading: restoreReading.checked, showReadingNotice: readingNotice.checked
+      } });
+      readingStatus.textContent = '设置已保存。';
+    } catch {
+      input.checked = !input.checked;
+      readingStatus.textContent = '保存失败，请重试。';
+    } finally { restoreReading.disabled = readingNotice.disabled = false; }
+  });
+}
+clearReading.addEventListener('click', async () => {
+  clearReading.disabled = true;
+  try {
+    // Announce reset before removal so open pages discard pending scroll saves.
+    await chrome.storage.local.set({ 'jkn.readingResetAt': Date.now() });
+    const data = await chrome.storage.local.get(null);
+    const keys = Object.keys(data).filter(key => key.startsWith(readingPrefix));
+    if (keys.length) await chrome.storage.local.remove(keys);
+    await refreshReadingCount();
+    readingStatus.textContent = '阅读位置已清除，私人备注已保留。';
+  } catch { readingStatus.textContent = '清除失败，请重试。'; }
+  finally { clearReading.disabled = false; }
+});
+
 async function getNotes() {
   const data = await chrome.storage.local.get(null);
   return Object.fromEntries(Object.entries(data).filter(([key, value]) => key.startsWith(prefix) && typeof value === 'string'));

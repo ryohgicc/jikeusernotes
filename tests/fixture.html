@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>即刻阅读恢复测试</title>
+<style>
+  body { margin: 0; font: 16px/1.6 system-ui; }
+  nav { position: fixed; width: 120px; } #viewport { margin-left: 130px; height: 650px; overflow-y: auto; }
+  ._mainContainer_fixture_1 { max-width: 650px; margin: auto; }
+  header { height: 140px; } .wrapper { height: 300px; box-sizing: border-box; padding: 16px; border-top: 1px solid #ddd; }
+  ._post_160sp_5 { height: 100%; } .content { padding-top: 25px; }
+</style>
+<nav><a href="/following">首页</a><a id="self" href="/u/account-a"><span title="个人主页">我的主页</span></a></nav>
+<div id="viewport"><main class="_mainContainer_fixture_1"></main></div>
+<script>
+  (() => {
+    let ids = Array.from({length: 30}, (_, i) => 'post-' + i);
+    let extraHeight = 0;
+    let total = 100;
+    let loadCalls = 0;
+    const root = document.querySelector('#viewport');
+    const main = document.querySelector('main');
+    function virtualize() {
+      for (const wrapper of main.querySelectorAll('.wrapper')) {
+        const rect = wrapper.getBoundingClientRect();
+        const active = rect.bottom >= -50 && rect.top <= 700;
+        if (active && !wrapper.firstChild) {
+          const post = document.createElement('div');
+          post.className = '_post_160sp_5';
+          const id = wrapper.dataset.fixtureId;
+          // Reproduce Jike's outer post host -> component {data:{id}} fiber chain.
+          post.__reactFiber$fixture = { memoizedProps: {}, return: { memoizedProps: { data: { id } }, return: null } };
+          post.innerHTML = '<a href="/u/author">示例作者</a><div class="content">示例动态</div>';
+          wrapper.append(post);
+        } else if (!active) wrapper.replaceChildren();
+      }
+    }
+    function render() {
+      main.replaceChildren();
+      const header = document.createElement('header');
+      header.style.height = (140 + extraHeight) + 'px';
+      header.textContent = '动态列表';
+      main.append(header);
+      for (const id of ids) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'wrapper'; wrapper.dataset.fixtureId = id;
+        main.append(wrapper);
+      }
+      virtualize();
+    }
+    root.addEventListener('scroll', () => {
+      virtualize();
+      if (root.scrollTop / Math.max(1, root.scrollHeight - root.clientHeight) >= .8 && ids.length < total) {
+        loadCalls += 1;
+        const start = ids.length;
+        ids.push(...Array.from({length: Math.min(10, total - start)}, (_, i) => 'post-' + (start + i)));
+        render();
+      }
+    });
+    window.fixture = {
+      navigate(path, nextIds = ids) { history.pushState({}, '', path); ids = nextIds; root.scrollTop = 0; render(); },
+      prepend(id) { ids.unshift(id); render(); },
+      layout(height) { extraHeight = height; render(); },
+      shortList(nextIds, max = 100) { ids = nextIds; total = max; render(); },
+      account(user) { document.querySelector('#self').href = '/u/' + user; },
+      loads() { return loadCalls; }
+    };
+    render();
+  })();
+</script></html>
