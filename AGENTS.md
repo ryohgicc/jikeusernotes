@@ -23,7 +23,9 @@
 - `jkn.settings`：`restoreReading`、`showReadingNotice` 默认为 true；关闭后停止记录与恢复，保留记录。
 - `jkn.settings` 有效期：`readingExpiryEnabled` 默认为 true，`readingMaxAgeHours` 默认为 24，须为 1～8760 的整数，按实际经过的毫秒数判断。旧 `readingMaxAgeDays`（1～365）仅用于兼容读取，换算为小时；保存设置时移除旧字段。过期记录不自动恢复或续期，主动浏览后才更新；关闭有效期限制则长期有效。
 - `jkn.readingResetAt`：清除通知；活动页面须放弃待保存快照与恢复任务，直到用户主动浏览。
-- `popup.html` / `popup.js`：设置、清除阅读记录与备注备份。清除或导入不能影响其他命名空间。
+- `popup.html` / `popup.js`：浏览器工具栏弹窗的设置、清除阅读记录与备注备份。
+- `settings-panel.js`：页面内设置面板，必须与 `popup.js` 保持相同的 `jkn.settings`、阅读清除和备注备份契约。
+- `floating.js`：信息流页面悬浮球与三个操作；只调用阅读控制和设置面板，不新增存储命名空间。图标使用 `assets/jike-logo.svg`，通过 `web_accessible_resources` 提供给页面。清除或导入不能影响其他命名空间。
 - 真实即刻适配变化须更新 fixtures 与 README；不要把模拟页面通过描述成用户登录环境已验证。
 
 行为改变时更新 README、CHANGELOG，并同步 manifest 与 package 版本。不得新增远程代码、令牌读取、遥测或无关权限。

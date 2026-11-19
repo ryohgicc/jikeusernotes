@@ -282,6 +282,18 @@
     showNotice('正在查找上次阅读位置…', '取消', () => cancel(s, true), true);
   }
 
+  function restoreCurrent() {
+    if (!state || state.loading || state.job || !settings.restoreReading) return;
+    clearDivider();
+    state.interacted = false;
+    state.canSave = false;
+    state.record = null;
+    const current = state;
+    chrome.storage.local.get(current.key).then(data => {
+      if (state === current) begin(current, data[current.key]);
+    }).catch(() => {});
+  }
+
   function update() {
     if (!ready) return;
     const key = settings.restoreReading ? keyNow() : null;
@@ -363,6 +375,7 @@
     positionDivider();
   });
   addEventListener('resize', positionDivider);
+  addEventListener('jkn-restore-reading', restoreCurrent);
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;

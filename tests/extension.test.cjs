@@ -34,6 +34,21 @@ test('installed MV3 extension uses separate execution worlds and real extension 
     const page = await context.newPage();
     await page.goto('https://web.okjike.com/following');
     await page.waitForSelector('[data-jkn-post]');
+    const floating = page.locator('[data-jkn-floating]');
+    await floating.locator('.ball img').evaluate(image => image.complete && image.naturalWidth > 0);
+    await floating.locator('.ball').click();
+    assert.equal(await floating.locator('.menu').evaluate(node => node.classList.contains('open')), true);
+    await floating.locator('[data-action="top"]').click();
+    assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), 0);
+    await floating.locator('.ball').click();
+    await floating.locator('[data-action="restore"]').click();
+    await page.waitForTimeout(200);
+    await floating.locator('.ball').click();
+    await floating.locator('[data-action="settings"]').click();
+    await floating.locator('#reading-max-age').waitFor();
+    assert.equal(await floating.locator('#reading-max-age').inputValue(), '24');
+    await floating.locator('.close').click();
+    assert.equal(await floating.locator('.overlay').evaluate(node => node.classList.contains('open')), false);
     await page.waitForTimeout(300);
     await page.locator('#viewport').evaluate(root => root.scrollTo(0, 980));
     // Poll the storage Promise from Node; a Promise itself is truthy in a DOM poll.
