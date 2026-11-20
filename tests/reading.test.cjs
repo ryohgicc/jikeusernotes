@@ -200,6 +200,7 @@ test('reading divider marks a partially read post, follows layout and virtualiza
     await marker.waitFor({ state: 'visible' });
     assert.ok(Math.abs((await marker.boundingBox()).y) <= 2);
     assert.equal(await page.locator('[data-jkn-reading-divider]').count(), 1);
+    assert.equal(await page.locator('[data-jkn-reading-divider]').evaluate(node => getComputedStyle(node.shadowRoot.querySelector('[role="separator"]')).animationName), 'jkn-divider-in');
     fs.mkdirSync(path.join(repo, 'test-results'), { recursive: true });
     await page.screenshot({ path: path.join(repo, 'test-results', 'reading-divider.png') });
 

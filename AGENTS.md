@@ -19,7 +19,7 @@
 - `content.js`：昵称备注，`jkn.note.<username>` -> 备注原文。不要更改用户已有备注。
 - `reading-bridge.js`：页面 MAIN 环境，只读已渲染 React props 的动态 ID，在虚拟列表容器添加 `data-jkn-post`，不接触认证数据或内部查询缓存。
 - `reading.js`：隔离环境中的阅读恢复，`jkn.reading.<account>:<route>` -> `{version:1,id,offset,top,savedAt}`。此命名空间不得用于备注备份。
-- 自动恢复查找期间显示覆盖整个视口的不透明遮罩，精确定位并布局稳定后移除；Esc、滚轮、页面切换、清除记录和撤销均移除。遮罩不改变信息流布局。
+- 自动恢复查找期间显示覆盖整个视口的不透明遮罩，带淡入、加载呼吸和完成或取消淡出；精确定位并布局稳定后移除。尊重 `prefers-reduced-motion`。Esc、滚轮、页面切换、清除记录和撤销均移除。遮罩不改变信息流布局。
 - 阅读分割线仅在精确恢复成功后显示，绑定本次恢复的动态 ID 与原偏移；覆盖绘制、不改变列表高度或拦截点击。滚动与虚拟列表重建后重新定位，撤销、切换页面或账号、关闭恢复和清除记录时移除。
 - `jkn.settings`：阅读位置始终自动采集；`restoreReading` 默认为 false，只负责进入信息流时是否自动恢复。关闭 `restoreReading` 仍记录浏览，悬浮球可手动恢复。已保存的 true/false 配置保持不变。`showReadingNotice` 默认为 true。悬浮球和设置点击不能覆盖已有书签；回顶不会更新书签，直到用户主动继续浏览。
 - `jkn.settings` 有效期：`readingExpiryEnabled` 默认为 true，`readingMaxAgeHours` 默认为 24，须为 1～8760 的整数，按实际经过的毫秒数判断。旧 `readingMaxAgeDays`（1～365）仅用于兼容读取，换算为小时；保存设置时移除旧字段。过期记录不自动恢复或续期，主动浏览后才更新；关闭有效期限制则长期有效。

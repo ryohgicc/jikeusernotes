@@ -122,8 +122,13 @@
 
   function hideNotice() {
     clearTimeout(noticeTimer);
-    notice?.remove();
+    const current = notice;
     notice = null;
+    if (!current) return;
+    if (current.hasAttribute('data-jkn-reading-mask')) {
+      current.dataset.jknReadingClosing = '';
+      setTimeout(() => current.remove(), 220);
+    } else current.remove();
   }
 
   function clearDivider() {
@@ -162,7 +167,8 @@
       :host { all: initial; position: fixed; z-index: 2147483646; pointer-events: none;
         overflow: hidden; contain: layout style paint; }
       div { display: flex; align-items: center; gap: 12px; height: 28px; padding: 0 12px;
-        box-sizing: border-box; font: 12px/1.5 system-ui, sans-serif; color: #856511; }
+        box-sizing: border-box; font: 12px/1.5 system-ui, sans-serif; color: #856511;
+        animation: jkn-divider-in .3s cubic-bezier(.22, 1, .36, 1) both; }
       div::before, div::after { content: ''; height: 1px; flex: 1; background: #dcc16a; }
       span { padding: 3px 10px; border-radius: 12px; background: #fff5cd; white-space: nowrap; }
     </style><div role="separator" aria-label="上次读到这里"><span>上次读到这里</span></div>`;
@@ -187,15 +193,27 @@
         padding: 6px; font: inherit; cursor: pointer; } button:focus-visible { outline: 2px solid #ffe371; }
       :host([data-jkn-reading-mask]) { inset: 0; left: 0; bottom: 0; transform: none;
         width: 100vw; max-width: none; height: 100dvh; display: grid; place-items: center;
-        z-index: 2147483639; background: #f7f7f5; color-scheme: light; overscroll-behavior: contain; touch-action: none; }
+        z-index: 2147483639; background: #f7f7f5; color-scheme: light; overscroll-behavior: contain; touch-action: none;
+        animation: jkn-mask-in .22s ease-out both; }
+      :host([data-jkn-reading-closing]) { animation: jkn-mask-out .22s ease-in both; pointer-events: none; }
       :host([data-jkn-reading-mask]) div { flex-direction: column; gap: 16px; background: transparent;
         color: #555; box-shadow: none; padding: 24px; text-align: center; }
+      :host([data-jkn-reading-mask]) span::before { content: ''; display: inline-block; width: 8px; height: 8px;
+        margin-right: 8px; border: 2px solid #d6c377; border-top-color: #806c2a; border-radius: 50%;
+        vertical-align: -1px; animation: jkn-spinner .8s linear infinite; }
       :host([data-jkn-reading-mask]) button { padding: 8px 24px; border: 1px solid #d6c377;
         border-radius: 20px; color: #796018; background: #fff5cd; }
       @media (prefers-color-scheme: dark) {
         :host([data-jkn-reading-mask]) { background: #181818; color-scheme: dark; }
         :host([data-jkn-reading-mask]) div { color: #ddd; }
         :host([data-jkn-reading-mask]) button { color: #ffe371; background: #39331e; border-color: #746333; }
+      }
+      @keyframes jkn-mask-in { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes jkn-mask-out { from { opacity: 1; } to { opacity: 0; } }
+      @keyframes jkn-spinner { to { transform: rotate(360deg); } }
+      @keyframes jkn-divider-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
       }
     </style><div role="status"><span></span><button type="button"></button></div>`;
     shadow.querySelector('span').textContent = message;

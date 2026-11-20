@@ -40,6 +40,7 @@ test('installed MV3 extension uses separate execution worlds and real extension 
     await floating.locator('.ball img').evaluate(image => image.complete && image.naturalWidth > 0);
     await floating.locator('.ball').click();
     assert.equal(await floating.locator('.menu').evaluate(node => node.classList.contains('open')), true);
+    assert.equal(await floating.locator('.menu').evaluate(node => getComputedStyle(node).animationName), 'jkn-menu-in');
     await floating.locator('[data-action="top"]').click();
     assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), 0);
     await floating.locator('.ball').click();

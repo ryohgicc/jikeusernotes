@@ -16,7 +16,7 @@
     .menu { position: fixed; right: 20px; bottom: 140px; z-index: 2147483640; display: none; width: 176px;
       padding: 8px; border: 1px solid #eee; border-radius: 14px; background: #fff;
       box-shadow: 0 8px 30px #0003; font: 14px/1.5 system-ui, sans-serif; }
-    .menu.open { display: grid; gap: 4px; }
+    .menu.open { display: grid; gap: 4px; animation: jkn-menu-in .16s cubic-bezier(.22, 1, .36, 1) both; transform-origin: bottom right; }
     .menu button { padding: 9px 10px; border: 0; border-radius: 9px; background: transparent; color: #222;
       font: inherit; text-align: left; cursor: pointer; }
     .menu button:hover, .menu button:focus-visible { background: #fff5cd; outline: none; }
@@ -24,6 +24,8 @@
       padding: 32px 16px; background: #0006; font: 14px/1.6 system-ui, sans-serif; }
     .overlay.open { display: flex; align-items: flex-start; justify-content: center; }
     .panel { width: min(420px, 100%); border-radius: 16px; overflow: hidden; box-shadow: 0 16px 64px #0005; }
+    @keyframes jkn-menu-in { from { opacity: 0; transform: translateY(6px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
   </style>
   <button class="ball" type="button" aria-label="打开即刻阅读工具"><img alt="即刻" src="${icon}"></button>
   <nav class="menu" aria-label="即刻阅读工具">
