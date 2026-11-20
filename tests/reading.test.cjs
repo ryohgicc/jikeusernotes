@@ -141,6 +141,7 @@ test('finds a virtualized anchor beyond initial data by bounded natural scrollin
   try {
     const page = await s.open('/following', page => page.evaluate(() => window.fixture.shortList(['post-0', 'post-1', 'post-2'], 20)));
     await restored(page);
+    assert.equal(await page.locator('[data-jkn-reading-mask]').count(), 0);
     assert.ok(await page.evaluate(() => window.fixture.loads()) > 0);
     assert.ok(Math.abs(await offset(page, 'post-8')) <= 2);
   } finally { await s.close(); }
@@ -150,9 +151,12 @@ test('corrects layout shifts while restoring; undo returns to entry position', a
   const s = await session({ [recordKey()]: bookmark('post-2', 740) });
   try {
     const page = await s.open();
+    await page.locator('[data-jkn-reading-mask]').waitFor();
     await page.waitForTimeout(1100);
     await page.evaluate(() => window.fixture.layout(160));
+    assert.equal(await page.locator('[data-jkn-reading-mask]').count(), 1);
     await restored(page);
+    assert.equal(await page.locator('[data-jkn-reading-mask]').count(), 0);
     assert.ok(Math.abs(await offset(page, 'post-2')) <= 2);
     assert.equal(await page.locator('[data-jkn-reading-divider]').count(), 1);
     await page.locator('[data-jkn-reading-ui] button').click();
@@ -204,6 +208,35 @@ test('reading divider marks a partially read post, follows layout and virtualiza
   } finally { await s.close(); }
 });
 
+test('opaque mask covers searching content and is removed on escape, navigation and clear', async () => {
+  for (const action of ['escape', 'navigate', 'clear']) {
+    const record = bookmark('post-20', 6140);
+    const s = await session({ [recordKey()]: record, 'jkn.settings': { showReadingNotice: false } });
+    try {
+      const page = await s.open();
+      const mask = page.locator('[data-jkn-reading-mask]');
+      await mask.waitFor({ state: 'visible' });
+      const rect = await mask.boundingBox();
+      assert.deepEqual(rect, { x: 0, y: 0, width: 1000, height: 720 });
+      assert.equal(await mask.evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(247, 247, 245)');
+      assert.equal(await mask.evaluate(node => document.elementFromPoint(500, 300) === node), true);
+      await page.waitForTimeout(1100);
+      assert.ok(await page.locator('#viewport').evaluate(root => root.scrollTop) > 0, 'search scrolls under the opaque mask');
+      assert.equal(await mask.count(), 1);
+      if (action === 'escape') {
+        await page.keyboard.press('Escape');
+        assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), 0);
+        assert.deepEqual(s.data[recordKey()], record);
+      } else if (action === 'navigate') {
+        await page.evaluate(() => window.fixture.navigate('/notification'));
+      } else {
+        await page.evaluate(() => chrome.storage.local.set({ 'jkn.readingResetAt': Date.now() }));
+      }
+      await mask.waitFor({ state: 'detached' });
+    } finally { await s.close(); }
+  }
+});
+
 test('manual wheel interrupts automatic restore immediately without later jumping', async () => {
   const record = bookmark('post-20', 6140);
   const s = await session({ [recordKey()]: record });
@@ -213,11 +246,12 @@ test('manual wheel interrupts automatic restore immediately without later jumpin
     await page.mouse.wheel(0, 200);
     await page.waitForTimeout(700);
     const top = await page.locator('#viewport').evaluate(root => root.scrollTop);
-    assert.ok(top > 0 && top < 1000);
+    assert.equal(top, 0, 'wheel on the mask cancels and reveals the entry position');
     await page.waitForTimeout(2200);
     assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), top);
     assert.equal(await page.locator('[data-jkn-reading-ui]').count(), 0);
     assert.equal(await page.locator('[data-jkn-reading-divider]').count(), 0);
+    assert.equal(await page.locator('[data-jkn-reading-mask]').count(), 0);
   } finally { await s.close(); }
 });
 
@@ -238,6 +272,7 @@ test('cancel preserves saved bookmark; missing post falls back with an honest no
     assert.equal(await fallback.locator('#viewport').evaluate(root => root.scrollTop), 950);
     assert.deepEqual(s.data[recordKey()], record, 'search/fallback must not erase the original bookmark');
     assert.equal(await fallback.locator('[data-jkn-reading-divider]').count(), 0);
+    assert.equal(await fallback.locator('[data-jkn-reading-mask]').count(), 0);
   } finally { await s.close(); }
 });
 

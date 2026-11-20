@@ -176,6 +176,7 @@
     if (!persistent && !settings.showReadingNotice) return;
     const host = document.createElement('div');
     host.dataset.jknReadingUi = '';
+    if (persistent) host.dataset.jknReadingMask = '';
     const shadow = host.attachShadow({ mode: 'closed' });
     shadow.innerHTML = `<style>
       :host { all: initial; position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
@@ -184,12 +185,29 @@
         background: #242424; color: #fff; box-shadow: 0 4px 24px #0003; font: 14px/1.5 system-ui, sans-serif; }
       button { flex-shrink: 0; background: transparent; color: #ffe371; border: 0;
         padding: 6px; font: inherit; cursor: pointer; } button:focus-visible { outline: 2px solid #ffe371; }
+      :host([data-jkn-reading-mask]) { inset: 0; left: 0; bottom: 0; transform: none;
+        width: 100vw; max-width: none; height: 100dvh; display: grid; place-items: center;
+        z-index: 2147483639; background: #f7f7f5; color-scheme: light; overscroll-behavior: contain; touch-action: none; }
+      :host([data-jkn-reading-mask]) div { flex-direction: column; gap: 16px; background: transparent;
+        color: #555; box-shadow: none; padding: 24px; text-align: center; }
+      :host([data-jkn-reading-mask]) button { padding: 8px 24px; border: 1px solid #d6c377;
+        border-radius: 20px; color: #796018; background: #fff5cd; }
+      @media (prefers-color-scheme: dark) {
+        :host([data-jkn-reading-mask]) { background: #181818; color-scheme: dark; }
+        :host([data-jkn-reading-mask]) div { color: #ddd; }
+        :host([data-jkn-reading-mask]) button { color: #ffe371; background: #39331e; border-color: #746333; }
+      }
     </style><div role="status"><span></span><button type="button"></button></div>`;
     shadow.querySelector('span').textContent = message;
     const button = shadow.querySelector('button');
     button.textContent = action || '关闭';
     button.addEventListener('click', () => { hideNotice(); callback?.(); });
     host.addEventListener('pointerdown', event => event.stopPropagation());
+    if (persistent) {
+      // Cancelling must reveal the entry position rather than a search frame.
+      host.addEventListener('wheel', event => { event.preventDefault(); callback?.(); }, { passive: false });
+      host.addEventListener('touchstart', event => { event.preventDefault(); callback?.(); }, { passive: false });
+    }
     document.documentElement.append(host);
     notice = host;
     if (!persistent) noticeTimer = setTimeout(hideNotice, 8000);
@@ -229,8 +247,8 @@
     if (target) {
       const delta = target.getBoundingClientRect().top - bounds(s.root).top - s.record.offset;
       setTop(s.root, s.root.scrollTop + delta);
-      if (!job.aligned) job.aligned = now;
-      if (now - job.aligned >= 1400) complete(s, true); // Correct late image/layout shifts.
+      if (!job.aligned || Math.abs(delta) > 2) job.aligned = now;
+      if (now - job.aligned >= 1400 || age >= 30000) complete(s, true); // Reveal only after layout settles.
       return;
     }
     job.aligned = null;
@@ -350,6 +368,10 @@
   }
 
   function userIntent(event) {
+    if (event.isTrusted && event.type === 'keydown' && event.key === 'Escape' && state?.job) {
+      cancel(state, true);
+      return;
+    }
     if (!event.isTrusted || isToolEvent(event)) return;
     if (event.type === 'keydown' && (!['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '].includes(event.key) ||
       event.target.closest?.('input, textarea, select, [contenteditable="true"]'))) return;
