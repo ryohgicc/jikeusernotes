@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "即刻私人备注",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "即刻网页版私人备注与信息流阅读位置自动恢复，数据保存在本机。",
   "permissions": ["storage"],
   "background": { "service_worker": "stats-worker.js" },

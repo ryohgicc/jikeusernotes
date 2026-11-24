@@ -137,6 +137,48 @@ test('SPA departure/return, root redirect alias, separate feeds and account isol
   } finally { await s.close(); }
 });
 
+test('returning from a detail route keeps the native feed position without extension restore', async () => {
+  for (const detail of ['/following?id=post-10', '/u/author/post/123']) {
+    const record = bookmark('post-10', 3140);
+    const s = await session({ [recordKey()]: record });
+    try {
+      // Start on details with auto restore enabled; native return goes to a
+      // deliberately different nonzero position from the extension bookmark.
+      const page = await s.open(detail);
+      await page.evaluate(() => {
+        window.fixture.returnFromDetail('/following', 980);
+        window.restoreMasks = 0;
+        new MutationObserver(records => {
+          for (const record of records) for (const node of record.addedNodes) {
+            if (node.nodeType === 1 && node.matches('[data-jkn-reading-mask]')) window.restoreMasks++;
+          }
+        }).observe(document.documentElement, { childList: true });
+      });
+      await page.waitForTimeout(2600);
+      assert.equal(await page.evaluate(() => window.restoreMasks), 0);
+      assert.equal(await page.locator('[data-jkn-reading-ui]').count(), 0);
+      assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), 980);
+      assert.deepEqual(s.data[recordKey()], record, 'native restoration must not overwrite the bookmark');
+      // A quick drawer open/close between polling ticks still skips restoration.
+      await page.evaluate(() => {
+        window.fixture.navigate('/following?id=another-post');
+        window.fixture.returnFromDetail('/following', 1250);
+      });
+      await page.waitForTimeout(1000);
+      assert.equal(await page.evaluate(() => window.restoreMasks), 0);
+      assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), 1250);
+      // Manual restore is still available after native return.
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent('jkn-restore-reading')));
+      await restored(page);
+      assert.ok(Math.abs(await offset(page, 'post-10')) <= 2);
+      await page.mouse.move(500, 300);
+      await page.mouse.wheel(0, 400);
+      await page.waitForTimeout(700);
+      assert.ok(s.data[recordKey()].top > 3140, 'recording continues after native return');
+    } finally { await s.close(); }
+  }
+});
+
 test('finds a virtualized anchor beyond initial data by bounded natural scrolling', async () => {
   const s = await session({ [recordKey()]: bookmark('post-8', 2540) });
   try {

@@ -64,6 +64,7 @@
     });
     window.fixture = {
       navigate(path, nextIds = ids) { history.pushState({}, '', path); ids = nextIds; root.scrollTop = 0; render(); },
+      returnFromDetail(path = '/following', top = 980) { history.pushState({}, '', path); render(); root.scrollTop = top; },
       prepend(id) { ids.unshift(id); render(); },
       layout(height) { extraHeight = height; render(); },
       shortList(nextIds, max = 100) { ids = nextIds; total = max; render(); },

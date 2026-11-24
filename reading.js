@@ -13,6 +13,13 @@
   let saveTimer;
   let ready = false;
   let resetGeneration = 0;
+  let previousPath = location.pathname;
+  let previousSearch = location.search;
+  let nativeReturnRoute = null;
+
+  function isDetailLocation(path, search) {
+    return new URLSearchParams(search).has('id') || /^\/u\/[a-zA-Z0-9_-]{1,128}\/(post|repost)\//.test(path);
+  }
 
   function route() {
     const path = location.pathname.replace(/\/$/, '') || '/';
@@ -359,6 +366,7 @@
     if (state !== s || keyNow() !== s.key) return;
     s.loading = false;
     s.record = validRecord(record) ? record : null;
+    if (!manual && s.skipAutoRestore) { s.canSave = !!s.interacted; return; }
     if (!settings.restoreReading && !manual) { s.canSave = !s.record || s.interacted; return; }
     // Keep stale bookmarks unchanged until the user actually browses again.
     if (s.record && expired(s.record) && !s.interacted && !manual) { s.record = null; s.canSave = false; return; }
@@ -389,13 +397,22 @@
 
   function update() {
     if (!ready) return;
+    const currentPath = location.pathname;
+    const currentSearch = location.search;
+    const currentRoute = route();
+    if (currentRoute && isDetailLocation(previousPath, previousSearch)) nativeReturnRoute = currentRoute;
+    else if (currentPath !== previousPath || currentSearch !== previousSearch) nativeReturnRoute = null;
+    previousPath = currentPath;
+    previousSearch = currentSearch;
     const key = keyNow();
     if ((state?.key || null) !== key) {
       if (state) { persist(state); cancel(state); }
       clearTimeout(saveTimer);
       hideNotice();
       clearDivider();
-      state = key ? { key, loading: true, canSave: false, snapshot: null, root: null } : null;
+      state = key ? { key, loading: true, canSave: false, snapshot: null, root: null,
+        skipAutoRestore: currentRoute === nativeReturnRoute } : null;
+      if (state) nativeReturnRoute = null;
       if (state) {
         const current = state;
         const generation = resetGeneration;
@@ -481,6 +498,8 @@
     positionDivider();
   });
   addEventListener('resize', positionDivider);
+  addEventListener('jkn-navigation', update);
+  addEventListener('popstate', update);
   addEventListener('jkn-restore-reading', restoreCurrent);
   addEventListener('jkn-reading-top', () => {
     cancel(state);

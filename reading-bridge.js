@@ -5,6 +5,17 @@
   const validId = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(value);
   let scheduled = false;
 
+  // Notify the isolated controller even when a detail drawer opens and closes
+  // between its polling ticks. Read-only notification; native history is kept.
+  for (const method of ['pushState', 'replaceState']) {
+    const original = history[method];
+    history[method] = function(...args) {
+      const result = Reflect.apply(original, this, args);
+      dispatchEvent(new Event('jkn-navigation'));
+      return result;
+    };
+  }
+
   function postId(node) {
     const key = Object.keys(node).find(name => name.startsWith('__reactFiber$'));
     let fiber = key && node[key];
