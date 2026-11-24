@@ -15,6 +15,8 @@
     let extraHeight = 0;
     let total = 100;
     let loadCalls = 0;
+    let loadDelay = 0;
+    let loading = false;
     const root = document.querySelector('#viewport');
     const main = document.querySelector('main');
     function virtualize() {
@@ -47,11 +49,17 @@
     }
     root.addEventListener('scroll', () => {
       virtualize();
-      if (root.scrollTop / Math.max(1, root.scrollHeight - root.clientHeight) >= .8 && ids.length < total) {
+      if (!loading && root.scrollTop / Math.max(1, root.scrollHeight - root.clientHeight) >= .8 && ids.length < total) {
+        loading = true;
         loadCalls += 1;
-        const start = ids.length;
-        ids.push(...Array.from({length: Math.min(10, total - start)}, (_, i) => 'post-' + (start + i)));
-        render();
+        const append = () => {
+          const start = ids.length;
+          ids.push(...Array.from({length: Math.min(10, total - start)}, (_, i) => 'post-' + (start + i)));
+          loading = false;
+          render();
+        };
+        if (loadDelay) setTimeout(append, loadDelay);
+        else append();
       }
     });
     window.fixture = {
@@ -60,7 +68,8 @@
       layout(height) { extraHeight = height; render(); },
       shortList(nextIds, max = 100) { ids = nextIds; total = max; render(); },
       account(user) { document.querySelector('#self').href = '/u/' + user; },
-      loads() { return loadCalls; }
+      loads() { return loadCalls; },
+      delay(ms) { loadDelay = ms; }
     };
     render();
   })();

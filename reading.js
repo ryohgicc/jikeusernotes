@@ -177,9 +177,9 @@
     positionDivider();
   }
 
-  function showNotice(message, action, callback, persistent = false) {
+  function showNotice(message, action, callback, persistent = false, keep = false) {
     hideNotice();
-    if (!persistent && !settings.showReadingNotice) return;
+    if (!persistent && !settings.showReadingNotice && !keep) return;
     const host = document.createElement('div');
     host.dataset.jknReadingUi = '';
     if (persistent) host.dataset.jknReadingMask = '';
@@ -228,7 +228,7 @@
     }
     document.documentElement.append(host);
     notice = host;
-    if (!persistent) noticeTimer = setTimeout(hideNotice, 8000);
+    if (!persistent && !keep) noticeTimer = setTimeout(hideNotice, 8000);
   }
 
   function cancel(s, goBack = false) {
@@ -240,18 +240,35 @@
     if (goBack && s.root?.isConnected && keyNow() === s.key) setTop(s.root, start);
   }
 
-  function complete(s, exact) {
+  function complete(s) {
     const job = s.job;
     s.job = null;
-    // Only exact restoration or subsequent manual scrolling updates the bookmark.
-    s.canSave = exact;
-    if (exact) { sample(s); persist(s); showDivider(s); }
-    showNotice(exact ? '已恢复到上次阅读位置' : '未找到原动态，已回到近似位置', '撤销恢复', () => {
+    s.canSave = true;
+    sample(s); persist(s); showDivider(s);
+    showNotice('已恢复到上次阅读位置', '撤销恢复', () => {
       if (state !== s || !s.root?.isConnected || keyNow() !== s.key) return;
       s.canSave = false;
       clearDivider();
       setTop(s.root, job.startTop);
     });
+  }
+
+  function pauseSearch(s, reason) {
+    const job = s.job;
+    const resume = { record: s.record, top: s.root.scrollTop, fromStart: job.fromStart, startTop: job.startTop };
+    cancel(s, true);
+    showNotice(reason + '，尚未找到原动态。已保留上次记录。', '继续查找', () => {
+      if (state !== s || keyNow() !== s.key || s.interacted || s.loading || s.job) return;
+      if (!s.root?.isConnected) return;
+      s.record = resume.record;
+      s.canSave = false;
+      s.snapshot = null;
+      s.job = { began: Date.now(), pausedAt: document.hidden ? Date.now() : null,
+        startTop: resume.startTop, steps: 0, nextStep: 0, searched: true, fromStart: resume.fromStart };
+      showNotice('正在继续查找上次阅读位置…', '取消', () => cancel(s, true), true);
+      // Allow the opaque mask to paint before returning to the search cursor.
+      s.job.resumeTop = resume.top;
+    }, false, true);
   }
 
   function advance(s, now) {
@@ -262,11 +279,17 @@
     const target = list.find(node => node.getAttribute('data-jkn-post') === s.record.id);
     const age = now - job.began;
     if (age < 800) { job.startTop = s.root.scrollTop; return; } // Let native restoration finish first.
+    if (job.resumeTop !== undefined) {
+      setTop(s.root, job.resumeTop);
+      delete job.resumeTop;
+      job.nextStep = now + 200;
+      return;
+    }
     if (target) {
       const delta = target.getBoundingClientRect().top - bounds(s.root).top - s.record.offset;
       setTop(s.root, s.root.scrollTop + delta);
       if (!job.aligned || Math.abs(delta) > 2) job.aligned = now;
-      if (now - job.aligned >= 1400 || age >= 30000) complete(s, true); // Reveal only after layout settles.
+      if (now - job.aligned >= 1400 || age >= 120000) complete(s); // Reveal only after layout settles.
       return;
     }
     job.aligned = null;
@@ -277,9 +300,8 @@
       }
       return;
     }
-    if (age >= 30000 || job.steps >= 80 || (job.stalledAt && now - job.stalledAt > 6000)) {
-      setTop(s.root, s.record.top);
-      complete(s, false);
+    if (age >= 120000 || job.steps >= 600 || (job.stalledAt && now - job.stalledAt > 15000)) {
+      pauseSearch(s, job.stalledAt && now - job.stalledAt > 15000 ? '页面暂时没有加载更多内容' : '本次查找已达到时限');
       return;
     }
     if (now < job.nextStep) return;
@@ -301,11 +323,11 @@
         setTop(s.root, max);
       } else {
         job.stalledAt = null;
-        setTop(s.root, Math.min(max, s.root.scrollTop + Math.max(200, bounds(s.root).height * 0.8)));
+        setTop(s.root, Math.min(max, s.root.scrollTop + Math.max(200, bounds(s.root).height * 0.9)));
       }
       job.steps += 1;
     }
-    job.nextStep = now + 350;
+    job.nextStep = now + (job.stalledAt ? 800 : 160);
   }
 
   function begin(s, record, manual = false) {
@@ -314,7 +336,7 @@
     s.record = validRecord(record) ? record : null;
     if (!settings.restoreReading && !manual) { s.canSave = !s.record || s.interacted; return; }
     // Keep stale bookmarks unchanged until the user actually browses again.
-    if (s.record && expired(s.record) && !s.interacted) { s.record = null; s.canSave = false; return; }
+    if (s.record && expired(s.record) && !s.interacted && !manual) { s.record = null; s.canSave = false; return; }
     if (!s.record || s.interacted) { s.canSave = true; return; }
     s.job = {
       began: Date.now(), pausedAt: document.hidden ? Date.now() : null,
@@ -466,6 +488,6 @@
     ready = true;
     update();
     // Also covers SPA history changes which don't necessarily mutate the DOM.
-    setInterval(update, 200);
+    setInterval(update, 100);
   }).catch(() => {});
 })();

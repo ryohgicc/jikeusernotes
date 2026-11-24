@@ -172,6 +172,7 @@ test('reading divider marks a partially read post, follows layout and virtualiza
     const page = await s.open();
     const marker = page.locator('[data-jkn-reading-divider] [role="separator"]');
     await marker.waitFor({ state: 'visible' });
+    await page.locator('[data-jkn-reading-mask]').waitFor({ state: 'detached' });
     assert.equal(await marker.innerText(), '上次读到这里');
     assert.equal(await page.locator('[data-jkn-reading-ui]').count(), 0, 'divider is independent of transient notices');
     assert.ok(Math.abs(await offset(page, 'post-2') + 120) <= 2);
@@ -256,7 +257,22 @@ test('manual wheel interrupts automatic restore immediately without later jumpin
   } finally { await s.close(); }
 });
 
-test('cancel preserves saved bookmark; missing post falls back with an honest notice', async () => {
+test('search timeout preserves the bookmark and offers continuation instead of an approximate restore', async () => {
+  const record = bookmark('yesterday-post', 950);
+  const s = await session({ [recordKey()]: record });
+  try {
+    const page = await s.open();
+    await page.clock.install();
+    await page.clock.fastForward(121000);
+    await page.waitForFunction(() => !document.querySelector('[data-jkn-reading-mask]'));
+    const notice = page.locator('[data-jkn-reading-ui]');
+    assert.ok((await notice.evaluate(node => node.shadowRoot.textContent)).includes('继续查找'), 'a stopped search must offer continuation');
+    assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), 0);
+    assert.deepEqual(s.data[recordKey()], record);
+  } finally { await s.close(); }
+});
+
+test('cancel preserves saved bookmark; a stopped search can continue to the exact post', async () => {
   const record = bookmark('deleted-post', 950);
   const s = await session({ [recordKey()]: record });
   try {
@@ -268,12 +284,79 @@ test('cancel preserves saved bookmark; missing post falls back with an honest no
     await page.close();
     const fallback = await s.open();
     await fallback.clock.install();
-    await fallback.clock.fastForward(31000);
-    await fallback.waitForFunction(() => document.querySelector('[data-jkn-reading-ui]')?.shadowRoot?.textContent.includes('近似位置'));
-    assert.equal(await fallback.locator('#viewport').evaluate(root => root.scrollTop), 950);
+    await fallback.clock.fastForward(121000);
+    await fallback.waitForFunction(() => document.querySelector('[data-jkn-reading-ui]')?.shadowRoot?.textContent.includes('继续查找'));
+    assert.equal(await fallback.locator('#viewport').evaluate(root => root.scrollTop), 0);
     assert.deepEqual(s.data[recordKey()], record, 'search/fallback must not erase the original bookmark');
     assert.equal(await fallback.locator('[data-jkn-reading-divider]').count(), 0);
     assert.equal(await fallback.locator('[data-jkn-reading-mask]').count(), 0);
+    await fallback.clock.resume();
+    await fallback.evaluate(() => window.fixture.prepend('deleted-post'));
+    await fallback.locator('[data-jkn-reading-ui] button').click();
+    await restored(fallback);
+    assert.ok(Math.abs(await offset(fallback, 'deleted-post')) <= 2);
+  } finally { await s.close(); }
+});
+
+test('deep pagination continues beyond the old 30 second limit and finds the exact saved post', async () => {
+  const record = bookmark('post-160', 48140);
+  const s = await session({ [recordKey()]: record });
+  try {
+    const page = await s.open('/following', async page => {
+      await page.clock.install();
+      await page.evaluate(() => {
+        window.fixture.shortList(['post-0', 'post-1', 'post-2'], 180);
+        window.fixture.delay(2200);
+      });
+    });
+    // Advance render/network timers in small increments so actual scroll events
+    // and the MAIN-world post marker can be delivered between clock ticks.
+    let elapsed = 0;
+    let found = false;
+    for (; elapsed < 110000; elapsed += 200) {
+      await page.clock.runFor(200);
+      await new Promise(resolve => setTimeout(resolve, 10));
+      found = await page.evaluate(() => document.querySelector('[data-jkn-reading-ui]')?.shadowRoot?.textContent.includes('已恢复到上次阅读位置'));
+      if (found) break;
+    }
+    assert.ok(found, 'the saved post must be found instead of falling back to a recent post');
+    assert.ok(elapsed > 30000, 'this regression must actually exceed the previous search budget');
+    assert.ok(Math.abs(await offset(page, record.id)) <= 2);
+    assert.ok(await page.evaluate(() => window.fixture.loads()) >= 16);
+  } finally { await s.close(); }
+});
+
+test('explicit manual restore can reach a bookmark older than the automatic expiry', async () => {
+  const record = { ...bookmark('post-2', 740), savedAt: Date.now() - 30 * 3600000 };
+  const s = await session({ [recordKey()]: record }, false);
+  try {
+    const page = await s.open();
+    await page.waitForTimeout(300);
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('jkn-restore-reading')));
+    await restored(page);
+    assert.ok(Math.abs(await offset(page, record.id)) <= 2);
+  } finally { await s.close(); }
+});
+
+test('slow pagination waits beyond the old six-second stall threshold', async () => {
+  const s = await session({ [recordKey()]: bookmark('post-8', 2540) });
+  try {
+    const page = await s.open('/following', async page => {
+      await page.clock.install();
+      await page.evaluate(() => {
+        window.fixture.shortList(['post-0', 'post-1', 'post-2'], 20);
+        window.fixture.delay(8000);
+      });
+    });
+    let found = false;
+    for (let elapsed = 0; elapsed < 30000; elapsed += 200) {
+      await page.clock.runFor(200);
+      await new Promise(resolve => setTimeout(resolve, 10));
+      found = await page.evaluate(() => document.querySelector('[data-jkn-reading-ui]')?.shadowRoot?.textContent.includes('已恢复到上次阅读位置'));
+      if (found) break;
+    }
+    assert.ok(found, JSON.stringify(await page.evaluate(() => ({ loads: window.fixture.loads(), top: document.querySelector('#viewport').scrollTop, height: document.querySelector('#viewport').scrollHeight, notice: document.querySelector('[data-jkn-reading-ui]')?.shadowRoot?.textContent.slice(-180), ids: [...document.querySelectorAll('[data-jkn-post]')].map(node => node.dataset.jknPost) }))));
+    assert.ok(Math.abs(await offset(page, 'post-8')) <= 2);
   } finally { await s.close(); }
 });
 
