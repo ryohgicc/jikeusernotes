@@ -54,6 +54,7 @@ async function session(seed = {}, autoRestore = true) {
     await page.goto('https://web.okjike.com' + url);
     if (setup) await setup(page);
     await page.addScriptTag({ path: path.join(repo, 'reading-bridge.js') });
+    await page.addScriptTag({ path: path.join(repo, 'loading-view.js') });
     await page.addScriptTag({ path: path.join(repo, 'reading.js') });
     await page.waitForFunction(() => document.querySelector('[data-jkn-post]'));
     return page;
@@ -237,6 +238,33 @@ test('opaque mask covers searching content and is removed on escape, navigation 
       await mask.waitFor({ state: 'detached' });
     } finally { await s.close(); }
   }
+});
+
+test('loading view shows actual search activity and adapts to dark mode and reduced motion', async () => {
+  const s = await session({ [recordKey()]: bookmark('post-80', 24140) });
+  try {
+    const page = await s.open('/following', page => page.evaluate(() => {
+      window.fixture.shortList(['post-0', 'post-1', 'post-2'], 100);
+      window.fixture.delay(8000);
+    }));
+    const mask = page.locator('[data-jkn-reading-mask]');
+    await mask.waitFor();
+    await page.waitForTimeout(1700);
+    const count = Number((await mask.locator('[data-count]').innerText()).match(/\d+/)[0]);
+    assert.ok(count > 0 && count <= 3, 'only actual identified posts are counted');
+    assert.ok(Number((await mask.locator('[data-elapsed]').innerText()).match(/\d+/)[0]) >= 1);
+    assert.equal(await mask.locator('h2').innerText(), '翻到上次，接着看。');
+    fs.mkdirSync(path.join(repo, 'test-results'), { recursive: true });
+    await page.screenshot({ path: path.join(repo, 'test-results', 'loading-light.png') });
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+    assert.equal(await mask.evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(24, 24, 24)');
+    assert.equal(await mask.locator('.stream').evaluate(node => getComputedStyle(node).animationName), 'none');
+    await page.setViewportSize({ width: 360, height: 540 });
+    assert.ok(await mask.locator('button').isVisible());
+    await page.screenshot({ path: path.join(repo, 'test-results', 'loading-dark-mobile.png') });
+    await mask.locator('button').click();
+    await mask.waitFor({ state: 'detached' });
+  } finally { await s.close(); }
 });
 
 test('manual wheel interrupts automatic restore immediately without later jumping', async () => {

@@ -7,6 +7,7 @@
   let settings = { ...defaults };
   let state = null;
   let notice;
+  let loadingView;
   let divider;
   let noticeTimer;
   let saveTimer;
@@ -124,6 +125,7 @@
     clearTimeout(noticeTimer);
     const current = notice;
     notice = null;
+    loadingView = null;
     if (!current) return;
     if (current.hasAttribute('data-jkn-reading-mask')) {
       current.dataset.jknReadingClosing = '';
@@ -216,9 +218,10 @@
         *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
       }
     </style><div role="status"><span></span><button type="button"></button></div>`;
-    shadow.querySelector('span').textContent = message;
+    if (persistent) loadingView = window.JknLoadingView.mount(shadow, message);
+    else shadow.querySelector('span').textContent = message;
     const button = shadow.querySelector('button');
-    button.textContent = action || '关闭';
+    button.textContent = persistent ? '取消查找' : action || '关闭';
     button.addEventListener('click', () => { hideNotice(); callback?.(); });
     host.addEventListener('pointerdown', event => event.stopPropagation());
     if (persistent) {
@@ -255,7 +258,7 @@
 
   function pauseSearch(s, reason) {
     const job = s.job;
-    const resume = { record: s.record, top: s.root.scrollTop, fromStart: job.fromStart, startTop: job.startTop };
+    const resume = { record: s.record, top: s.root.scrollTop, fromStart: job.fromStart, startTop: job.startTop, seen: job.seen };
     cancel(s, true);
     showNotice(reason + '，尚未找到原动态。已保留上次记录。', '继续查找', () => {
       if (state !== s || keyNow() !== s.key || s.interacted || s.loading || s.job) return;
@@ -264,7 +267,7 @@
       s.canSave = false;
       s.snapshot = null;
       s.job = { began: Date.now(), pausedAt: document.hidden ? Date.now() : null,
-        startTop: resume.startTop, steps: 0, nextStep: 0, searched: true, fromStart: resume.fromStart };
+        startTop: resume.startTop, steps: 0, nextStep: 0, searched: true, fromStart: resume.fromStart, seen: resume.seen };
       showNotice('正在继续查找上次阅读位置…', '取消', () => cancel(s, true), true);
       // Allow the opaque mask to paint before returning to the search cursor.
       s.job.resumeTop = resume.top;
@@ -278,6 +281,10 @@
     const list = posts(s.root);
     const target = list.find(node => node.getAttribute('data-jkn-post') === s.record.id);
     const age = now - job.began;
+    job.seen ||= new Set();
+    for (const node of list) job.seen.add(node.getAttribute('data-jkn-post'));
+    loadingView?.update({ phase: target ? 'align' : job.stalledAt ? 'load' : 'search', seen: job.seen.size,
+      seconds: Math.floor(age / 1000), paused: false });
     if (age < 800) { job.startTop = s.root.scrollTop; return; } // Let native restoration finish first.
     if (job.resumeTop !== undefined) {
       setTop(s.root, job.resumeTop);
@@ -387,7 +394,12 @@
     if (root !== s.root) s.root = root;
     if (s.job) {
       const now = Date.now();
-      if (document.hidden) { s.job.pausedAt ||= now; return; }
+      if (document.hidden) {
+        s.job.pausedAt ||= now;
+        loadingView?.update({ phase: s.job.aligned ? 'align' : s.job.stalledAt ? 'load' : 'search',
+          seen: s.job.seen?.size || 0, seconds: Math.floor((s.job.pausedAt - s.job.began) / 1000), paused: true });
+        return;
+      }
       if (s.job.pausedAt) {
         const elapsed = now - s.job.pausedAt;
         s.job.began += elapsed;
