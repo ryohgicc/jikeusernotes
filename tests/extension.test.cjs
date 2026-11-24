@@ -36,10 +36,21 @@ test('installed MV3 extension uses separate execution worlds and real extension 
     const page = await context.newPage();
     await page.goto('https://web.okjike.com/following');
     await page.waitForSelector('[data-jkn-post]');
+    await page.bringToFront();
+    await page.waitForTimeout(2600);
     const floating = page.locator('[data-jkn-floating]');
     await floating.locator('.ball img').evaluate(image => image.complete && image.naturalWidth > 0);
     await floating.locator('.ball').click();
     assert.equal(await floating.locator('.menu').evaluate(node => node.classList.contains('open')), true);
+    await page.waitForFunction(() => {
+      const value = document.querySelector('[data-jkn-floating]')?.shadowRoot.querySelector('[data-stat="today-posts"]')?.textContent;
+      return value && !['—', '0 条'].includes(value);
+    });
+    assert.ok(await floating.locator('[data-stat="total-time"]').innerText() !== '—');
+    await page.screenshot({ path: path.join(results, 'browsing-stats.png') });
+    const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+    const statsBefore = await worker.evaluate(() => JknStatsStore.read('account-a'));
+    assert.ok(statsBefore.todayPosts >= 1 && statsBefore.totalMs > 0);
     assert.equal(await floating.locator('.menu').evaluate(node => getComputedStyle(node).animationName), 'jkn-menu-in');
     await floating.locator('[data-action="top"]').click();
     assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), 0);
@@ -72,10 +83,14 @@ test('installed MV3 extension uses separate execution worlds and real extension 
     await floating.locator('.ball').click();
     await floating.locator('[data-action="restore"]').click();
     await page.locator('[data-jkn-reading-mask]').waitFor({ state: 'visible' });
+    const statsDuringSearch = await worker.evaluate(() => JknStatsStore.read('account-a'));
+    assert.ok(statsDuringSearch.totalPosts >= statsBefore.totalPosts, 'statistics survive a reload');
+    const duringMs = statsDuringSearch.totalMs;
     await page.waitForFunction(() => {
       const card = document.querySelector('[data-jkn-post="post-2"]');
       return card && Math.abs(card.getBoundingClientRect().top + 240) <= 2;
     }, undefined, { timeout: 10000 });
+    assert.equal((await worker.evaluate(() => JknStatsStore.read('account-a'))).totalMs, duringMs, 'automatic search is excluded');
     await page.waitForTimeout(1700);
     const restored = await popup.evaluate(async () => (await chrome.storage.local.get(null))['jkn.reading.account-a:/following']);
     assert.equal(restored.id, original.id);
@@ -112,6 +127,7 @@ test('installed MV3 extension uses separate execution worlds and real extension 
     const final = await popup.evaluate(() => chrome.storage.local.get(null));
     assert.equal(final['jkn.reading.account-a:/following'], undefined);
     assert.equal(final['jkn.note.author'], '朋友');
+    assert.ok((await worker.evaluate(() => JknStatsStore.read('account-a'))).totalPosts >= statsBefore.totalPosts, 'clearing reading positions preserves statistics');
     await page.screenshot({ path: path.join(results, 'reading-restored.png') });
     await popup.screenshot({ path: path.join(results, 'popup.png') });
   } finally {

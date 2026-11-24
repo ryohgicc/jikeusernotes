@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "即刻私人备注",
-  "version": "1.3.5",
+  "version": "1.4.0",
   "description": "即刻网页版私人备注与信息流阅读位置自动恢复，数据保存在本机。",
   "permissions": ["storage"],
+  "background": { "service_worker": "stats-worker.js" },
   "content_scripts": [{
     "matches": ["https://web.okjike.com/*"],
-    "js": ["content.js", "settings-panel.js", "loading-view.js", "reading.js", "floating.js"],
+    "js": ["content.js", "settings-panel.js", "loading-view.js", "reading.js", "stats.js", "floating.js"],
     "css": ["content.css"],
     "run_at": "document_idle"
   }, {

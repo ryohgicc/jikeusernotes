@@ -349,6 +349,11 @@ test('deep pagination continues beyond the old 30 second limit and finds the exa
     }
     assert.ok(found, 'the saved post must be found instead of falling back to a recent post');
     assert.ok(elapsed > 30000, 'this regression must actually exceed the previous search budget');
+    await page.clock.resume();
+    await page.waitForFunction(id => {
+      const node = document.querySelector(`[data-jkn-post="${id}"]`);
+      return node && Math.abs(node.getBoundingClientRect().top) <= 2;
+    }, record.id);
     assert.ok(Math.abs(await offset(page, record.id)) <= 2);
     assert.ok(await page.evaluate(() => window.fixture.loads()) >= 16);
   } finally { await s.close(); }

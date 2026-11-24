@@ -13,13 +13,19 @@
       cursor: pointer; transition: transform .15s, box-shadow .15s; }
     .ball:hover, .ball:focus-visible { transform: scale(1.07); box-shadow: 0 6px 24px #0004; outline: 2px solid #c9a441; outline-offset: 2px; }
     .ball img { display: block; width: 100%; height: 100%; border-radius: 50%; }
-    .menu { position: fixed; right: 20px; bottom: 140px; z-index: 2147483640; display: none; width: 176px;
+    .menu { position: fixed; right: 20px; bottom: 140px; z-index: 2147483640; display: none; width: 260px;
+      box-sizing: border-box; max-width: calc(100vw - 16px); max-height: calc(100dvh - 24px); overflow-y: auto;
       padding: 8px; border: 1px solid #eee; border-radius: 14px; background: #fff;
       box-shadow: 0 8px 30px #0003; font: 14px/1.5 system-ui, sans-serif; }
     .menu.open { display: grid; gap: 4px; animation: jkn-menu-in .16s cubic-bezier(.22, 1, .36, 1) both; transform-origin: bottom right; }
     .menu button { padding: 9px 10px; border: 0; border-radius: 9px; background: transparent; color: #222;
       font: inherit; text-align: left; cursor: pointer; }
     .menu button:hover, .menu button:focus-visible { background: #fff5cd; outline: none; }
+    .stats { border-top: 1px solid #eee; padding: 12px 10px 6px; margin-top: 4px; color: #777; font-size: 11px; }
+    .stats h3 { margin: 0 0 8px; font-size: 12px; font-weight: 500; color: #555; }
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+    .stats-grid strong { display: block; color: #282a28; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .stats p { margin: 10px 0 0; color: #999; font-size: 10px; }
     .overlay { position: fixed; inset: 0; z-index: 2147483641; display: none; overflow: auto;
       padding: 32px 16px; background: #0006; font: 14px/1.6 system-ui, sans-serif; }
     .overlay.open { display: flex; align-items: flex-start; justify-content: center; }
@@ -32,6 +38,16 @@
     <button type="button" data-action="top">回到顶部</button>
     <button type="button" data-action="restore">回到上次浏览位置</button>
     <button type="button" data-action="settings">设置</button>
+    <section class="stats" aria-label="浏览统计">
+      <h3>浏览统计</h3>
+      <div class="stats-grid">
+        <div>今日时长<strong data-stat="today-time">—</strong></div>
+        <div>累计时长<strong data-stat="total-time">—</strong></div>
+        <div>今日动态<strong data-stat="today-posts">—</strong></div>
+        <div>累计动态<strong data-stat="total-posts">—</strong></div>
+      </div>
+      <p data-stats-note>仅统计前台浏览 · 动态停留 1 秒计入</p>
+    </section>
   </nav>
   <div class="overlay" role="dialog" aria-modal="true" aria-label="即刻私人备注设置"><div class="panel"></div></div>`;
 
@@ -43,6 +59,22 @@
   let dragging = false;
   let moved = false;
   let suppressClick = false;
+
+  function formatTime(milliseconds) {
+    const seconds = Math.floor((milliseconds || 0) / 1000);
+    if (seconds < 60) return `${seconds} 秒`;
+    const minutes = Math.floor(seconds / 60);
+    return minutes < 60 ? `${minutes} 分 ${seconds % 60} 秒` : `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分`;
+  }
+  function renderStats(data) {
+    const missing = !data || data.error || data.unavailable;
+    for (const [name, value] of Object.entries({
+      'today-time': formatTime(data?.todayMs), 'total-time': formatTime(data?.totalMs),
+      'today-posts': `${data?.todayPosts || 0} 条`, 'total-posts': `${data?.totalPosts || 0} 条`
+    })) shadow.querySelector(`[data-stat="${name}"]`).textContent = missing ? '—' : value;
+    shadow.querySelector('[data-stats-note]').textContent = data?.error ? '统计暂不可用，请刷新页面后重试'
+      : data?.unavailable ? '登录即刻后开始统计' : '前台浏览时计时 · 动态停留 1 秒计入并去重';
+  }
 
   function supported() {
     const path = location.pathname.replace(/\/$/, '') || '/';
@@ -59,6 +91,13 @@
     return document.scrollingElement;
   }
   function closeMenu() { menu.classList.remove('open'); }
+  function positionMenu() {
+    if (!menu.classList.contains('open')) return;
+    const rect = ball.getBoundingClientRect();
+    menu.style.bottom = 'auto';
+    menu.style.top = `${Math.max(8, Math.min(innerHeight - menu.offsetHeight - 8, rect.top - menu.offsetHeight - 8))}px`;
+    menu.style.right = `${Math.max(8, Math.min(innerWidth - menu.offsetWidth - 8, innerWidth - rect.right))}px`;
+  }
   function openSettings() {
     closeMenu();
     if (!panelMounted) {
@@ -87,6 +126,7 @@
       ball.style.bottom = `${Math.max(8, Math.min(innerHeight - 56, startBottom - dy))}px`;
       menu.style.right = ball.style.right;
       menu.style.bottom = `calc(${ball.style.bottom} + 56px)`;
+      positionMenu();
     }
     function end() {
       dragging = false;
@@ -102,6 +142,8 @@
   ball.addEventListener('click', () => {
     if (suppressClick) return;
     menu.classList.toggle('open');
+    positionMenu();
+    if (menu.classList.contains('open')) window.JknBrowsingStats?.get().then(renderStats);
   });
   shadow.querySelector('[data-action="top"]').addEventListener('click', () => {
     closeMenu();
@@ -122,5 +164,9 @@
   }, true);
   updateVisibility();
   setInterval(updateVisibility, 500);
+  addEventListener('resize', positionMenu);
+  setInterval(() => {
+    if (menu.classList.contains('open')) renderStats(window.JknBrowsingStats?.peek());
+  }, 1000);
   document.documentElement.append(host);
 })();

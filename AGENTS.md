@@ -28,7 +28,9 @@
 - `jkn.readingResetAt`：清除通知；活动页面须放弃待保存快照与恢复任务，直到用户主动浏览。
 - `popup.html` / `popup.js`：浏览器工具栏弹窗的设置、清除阅读记录与备注备份。
 - `settings-panel.js`：页面内设置面板，必须与 `popup.js` 保持相同的 `jkn.settings`、阅读清除和备注备份契约。
-- `floating.js`：信息流页面悬浮球与三个操作；只调用阅读控制和设置面板，不新增存储命名空间。图标使用 `assets/jike-logo.svg`，通过 `web_accessible_resources` 提供给页面。清除或导入不能影响其他命名空间。
+- `stats.js`：读取 `JknReadingStatsFrame`，前台有焦点且无遮挡才计时；可见动态停留约 1 秒计入。
+- `stats-worker.js` / `stats-store.js`：扩展自身 IndexedDB `jkn-browsing-stats` v1，accounts 保存账号总量、当日量和最近去重时段，posts 保存账号/动态 ID 与最后计入日期；事务串行合并多标签页，统计不进入备注备份，清除阅读位置不能影响统计。升级从零开始，不修改旧备注或阅读记录。
+- `floating.js`：信息流页面悬浮球与三个操作及统计展示；调用阅读控制、设置面板和统计查询。图标使用 `assets/jike-logo.svg`，通过 `web_accessible_resources` 提供给页面。清除或导入不能影响其他命名空间。
 - 真实即刻适配变化须更新 fixtures 与 README；不要把模拟页面通过描述成用户登录环境已验证。
 
 行为改变时更新 README、CHANGELOG，并同步 manifest 与 package 版本。不得新增远程代码、令牌读取、遥测或无关权限。

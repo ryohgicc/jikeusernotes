@@ -70,6 +70,24 @@
     );
   }
 
+  window.JknReadingStatsFrame = () => {
+    const user = account();
+    const root = rootForPage();
+    const tools = document.querySelector('[data-jkn-floating]')?.shadowRoot;
+    const active = !!(user && route() && root && !document.hidden && document.hasFocus() &&
+      !state?.loading && !state?.job && !document.querySelector('[data-jkn-reading-mask], [data-jkn-editor]') &&
+      !tools?.querySelector('.overlay.open'));
+    if (!active) return { account: user, active: false, ids: [] };
+    const box = bounds(root);
+    const ids = posts(root).filter(node => {
+      // A virtual wrapper without mounted content has not been read.
+      if (!node.querySelector('[class*="_post_"]')) return false;
+      const rect = node.getBoundingClientRect();
+      return Math.min(rect.bottom, box.bottom) - Math.max(rect.top, box.top) >= Math.min(100, rect.height * .5);
+    }).map(node => node.getAttribute('data-jkn-post'));
+    return { account: user, active: true, ids };
+  };
+
   function setTop(root, top) {
     root.scrollTo({ top: Math.max(0, top), behavior: 'instant' });
   }

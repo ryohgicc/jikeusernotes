@@ -1,10 +1,10 @@
 {
   "name": "jikeusernotes",
-  "version": "1.3.5",
+  "version": "1.4.0",
   "private": true,
   "description": "即刻网页版私人备注与阅读位置恢复",
   "scripts": {
-    "lint": "node --check content.js && node --check reading.js && node --check reading-bridge.js && node --check popup.js && node --check settings-panel.js && node --check floating.js && node --check loading-view.js",
+    "lint": "node --check content.js && node --check reading.js && node --check reading-bridge.js && node --check popup.js && node --check settings-panel.js && node --check floating.js && node --check loading-view.js && node --check stats.js && node --check stats-store.js && node --check stats-worker.js",
     "test": "node --test tests/*.test.cjs"
   },
   "devDependencies": { "playwright": "1.65.1" }
