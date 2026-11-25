@@ -34,6 +34,8 @@ test('installed MV3 extension uses separate execution worlds and real extension 
     await popup.waitForFunction(() => !document.querySelector('#restore-reading').disabled);
     assert.equal(await popup.locator('#restore-reading').isChecked(), false);
     const page = await context.newPage();
+    const pageErrors = [];
+    page.on('pageerror', error => pageErrors.push(error.message));
     await page.goto('https://web.okjike.com/following');
     await page.waitForSelector('[data-jkn-post]');
     await page.bringToFront();
@@ -130,6 +132,16 @@ test('installed MV3 extension uses separate execution worlds and real extension 
     assert.ok((await worker.evaluate(() => JknStatsStore.read('account-a'))).totalPosts >= statsBefore.totalPosts, 'clearing reading positions preserves statistics');
     await page.screenshot({ path: path.join(results, 'reading-restored.png') });
     await popup.screenshot({ path: path.join(results, 'popup.png') });
+    // Reload the installed extension while leaving its old content scripts in
+    // the page: stale API calls must stop instead of throwing on every scroll.
+    await popup.evaluate(() => { setTimeout(() => chrome.runtime.reload(), 50); });
+    await page.waitForTimeout(1400);
+    await page.mouse.move(500, 300);
+    await page.mouse.wheel(0, 200);
+    await floating.locator('.ball').click();
+    await page.waitForFunction(() => document.querySelector('[data-jkn-floating]')?.hasAttribute('data-jkn-expired'));
+    assert.ok((await floating.locator('.menu').innerText()).includes('刷新即刻页面'));
+    assert.deepEqual(pageErrors, [], 'extension reload must not leak page exceptions');
   } finally {
     await context?.close();
     fs.rmSync(profile, { recursive: true, force: true });

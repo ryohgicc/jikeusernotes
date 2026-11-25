@@ -5,6 +5,31 @@
   const mounts = new Map();
   let timer;
   let editor;
+  let observer;
+  let stopped = false;
+
+  function stop() {
+    stopped = true;
+    clearTimeout(timer);
+    observer?.disconnect();
+  }
+  addEventListener('jkn-context-expired', stop);
+
+  function contextAlive() {
+    try { return !!chrome?.runtime?.id; } catch { return false; }
+  }
+  function storageGet(keys) {
+    if (!contextAlive()) return Promise.reject(new Error('Extension context invalidated'));
+    try { return chrome.storage.local.get(keys); } catch (error) { return Promise.reject(error); }
+  }
+  function storageSet(value) {
+    if (!contextAlive()) return Promise.reject(new Error('Extension context invalidated'));
+    try { return chrome.storage.local.set(value); } catch (error) { return Promise.reject(error); }
+  }
+  function storageRemove(keys) {
+    if (!contextAlive()) return Promise.reject(new Error('Extension context invalidated'));
+    try { return chrome.storage.local.remove(keys); } catch (error) { return Promise.reject(error); }
+  }
 
   function identity(anchor) {
     try {
@@ -36,6 +61,7 @@
   }
 
   function scan() {
+    if (stopped) return;
     for (const [anchor, item] of mounts) {
       if (!anchor.isConnected || identity(anchor) !== item.id || isProfileTabAnchor(anchor)) {
         item.button.remove();
@@ -69,6 +95,7 @@
   }
 
   function schedule() {
+    if (stopped) return;
     clearTimeout(timer);
     timer = setTimeout(scan, 100);
   }
@@ -130,8 +157,8 @@
       error.hidden = true;
       const value = input.value.trim();
       try {
-        if (value) await chrome.storage.local.set({ [prefix + id]: value });
-        else await chrome.storage.local.remove(prefix + id);
+        if (value) await storageSet({ [prefix + id]: value });
+        else await storageRemove(prefix + id);
         if (value) notes.set(id, value);
         else notes.delete(id);
         scan();
@@ -150,7 +177,7 @@
     input.select();
   }
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  try { chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     for (const [key, change] of Object.entries(changes)) {
       if (!key.startsWith(prefix)) continue;
@@ -159,16 +186,17 @@
       else notes.delete(id);
     }
     schedule();
-  });
+  }); } catch { return; }
 
-  chrome.storage.local.get(null).then(data => {
+  storageGet(null).then(data => {
     for (const [key, value] of Object.entries(data)) {
       if (key.startsWith(prefix) && typeof value === 'string') notes.set(key.slice(prefix.length), value);
     }
     scan();
-    new MutationObserver(schedule).observe(document.body, {
+    observer = new MutationObserver(schedule);
+    observer.observe(document.body, {
       childList: true, subtree: true, characterData: true,
       attributes: true, attributeFilter: ['href']
     });
-  }).catch(error => console.error('[即刻私人备注] 无法读取备注，请刷新页面。', error));
+  }).catch(error => { if (contextAlive()) console.error('[即刻私人备注] 无法读取备注，请刷新页面。', error); });
 })();

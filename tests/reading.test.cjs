@@ -38,7 +38,7 @@ async function session(seed = {}, autoRestore = true) {
     Element.prototype.attachShadow = function(options) { return attach.call(this, { ...options, mode: 'open' }); };
     const callbacks = [];
     window.__storageNotify = changes => callbacks.forEach(callback => callback(changes, 'local'));
-    window.chrome = { storage: {
+    window.chrome = { runtime: { id: 'fixture-extension' }, storage: {
       onChanged: { addListener: callback => callbacks.push(callback) },
       local: {
         get: keys => window.__storageCall({ method: 'get', keys }),
@@ -179,6 +179,89 @@ test('returning from a detail route keeps the native feed position without exten
   }
 });
 
+test('completed restoration is not repeated when the sidebar temporarily remounts', async () => {
+  const s = await session({ [recordKey()]: bookmark('post-2', 740) });
+  try {
+    const page = await s.open();
+    await restored(page);
+    await page.locator('[data-jkn-reading-mask]').waitFor({ state: 'detached' });
+    await page.evaluate(() => {
+      window.extraMasks = 0;
+      new MutationObserver(records => {
+        for (const record of records) for (const node of record.addedNodes) {
+          if (node.nodeType === 1 && node.matches('[data-jkn-reading-mask]')) window.extraMasks++;
+        }
+      }).observe(document.documentElement, { childList: true });
+      window.selfLink = document.querySelector('#self');
+      selfLink.remove();
+    });
+    await page.waitForTimeout(250);
+    await page.evaluate(() => {
+      document.querySelector('nav').append(selfLink);
+      window.fixture.layout(0);
+      document.querySelector('#viewport').scrollTop = 0;
+    });
+    await page.waitForTimeout(2000);
+    assert.equal(await page.evaluate(() => window.extraMasks), 0, 'same feed visit must not start a second animation');
+  } finally { await s.close(); }
+});
+
+test('native positioning before or shortly after startup does not show an extension animation', async () => {
+  for (const delay of [0, 400]) {
+    const s = await session({ [recordKey()]: bookmark('post-10', 3140) });
+    try {
+      const page = await s.open('/following', async page => {
+        await page.evaluate(delay => {
+          window.masks = 0;
+          new MutationObserver(records => {
+            for (const record of records) for (const node of record.addedNodes) {
+              if (node.nodeType === 1 && node.matches('[data-jkn-reading-mask]')) window.masks++;
+            }
+          }).observe(document.documentElement, { childList: true });
+          if (delay) setTimeout(() => document.querySelector('#viewport').scrollTop = 980, delay);
+          else document.querySelector('#viewport').scrollTop = 980;
+        }, delay);
+      });
+      await page.waitForTimeout(2200);
+      assert.equal(await page.evaluate(() => window.masks), 0);
+      assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), 980);
+    } finally { await s.close(); }
+  }
+});
+
+test('a replaced extension context stops storage work without page exceptions', async () => {
+  const s = await session({ [recordKey()]: bookmark('post-2', 740) });
+  try {
+    const page = await s.open();
+    await restored(page);
+    await page.evaluate(() => {
+      window.invalidCalls = 0;
+      Object.defineProperty(window, 'chrome', { configurable: true, value: {
+        runtime: {}, storage: { local: { get() { invalidCalls++; throw new Error('Extension context invalidated'); }, set() { invalidCalls++; throw new Error('Extension context invalidated'); } }, onChanged: { addListener() { throw new Error('Extension context invalidated'); } } }
+      } });
+    });
+    await page.locator('#viewport').evaluate(root => root.scrollTo(0, 980));
+    await page.waitForTimeout(700);
+    assert.equal(await page.locator('[data-jkn-reading-ui]').count(), 0);
+    assert.equal(await page.evaluate(() => window.invalidCalls), 0);
+  } finally { await s.close(); }
+});
+
+test('synchronous API invalidation during a save cancels restoration safely', async () => {
+  const s = await session({}, false);
+  try {
+    const page = await s.open();
+    await page.evaluate(() => {
+      chrome.storage.local.set = () => { throw new Error('Extension context invalidated.'); };
+    });
+    await page.locator('#viewport').evaluate(root => root.scrollTo(0, 980));
+    await page.waitForTimeout(700);
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('jkn-restore-reading')));
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator('[data-jkn-reading-ui]').count(), 0);
+  } finally { await s.close(); }
+});
+
 test('finds a virtualized anchor beyond initial data by bounded natural scrolling', async () => {
   const s = await session({ [recordKey()]: bookmark('post-8', 2540) });
   try {
@@ -195,7 +278,7 @@ test('corrects layout shifts while restoring; undo returns to entry position', a
   try {
     const page = await s.open();
     await page.locator('[data-jkn-reading-mask]').waitFor();
-    await page.waitForTimeout(1100);
+    await page.waitForFunction(() => document.querySelector('#viewport').scrollTop > 0);
     await page.evaluate(() => window.fixture.layout(160));
     assert.equal(await page.locator('[data-jkn-reading-mask]').count(), 1);
     await restored(page);
@@ -255,7 +338,7 @@ test('reading divider marks a partially read post, follows layout and virtualiza
 
 test('opaque mask covers searching content and is removed on escape, navigation and clear', async () => {
   for (const action of ['escape', 'navigate', 'clear']) {
-    const record = bookmark('post-20', 6140);
+    const record = bookmark('not-yet-loaded-post', 6140);
     const s = await session({ [recordKey()]: record, 'jkn.settings': { showReadingNotice: false } });
     try {
       const page = await s.open();
@@ -314,6 +397,7 @@ test('manual wheel interrupts automatic restore immediately without later jumpin
   const s = await session({ [recordKey()]: record });
   try {
     const page = await s.open();
+    await page.locator('[data-jkn-reading-mask]').waitFor();
     await page.mouse.move(500, 300);
     await page.mouse.wheel(0, 200);
     await page.waitForTimeout(700);
@@ -332,6 +416,7 @@ test('search timeout preserves the bookmark and offers continuation instead of a
   const s = await session({ [recordKey()]: record });
   try {
     const page = await s.open();
+    await page.locator('[data-jkn-reading-mask]').waitFor();
     await page.clock.install();
     await page.clock.fastForward(121000);
     await page.waitForFunction(() => !document.querySelector('[data-jkn-reading-mask]'));
@@ -385,7 +470,7 @@ test('deep pagination continues beyond the old 30 second limit and finds the exa
     let found = false;
     for (; elapsed < 110000; elapsed += 200) {
       await page.clock.runFor(200);
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise(resolve => setTimeout(resolve, 25));
       found = await page.evaluate(() => document.querySelector('[data-jkn-reading-ui]')?.shadowRoot?.textContent.includes('已恢复到上次阅读位置'));
       if (found) break;
     }
@@ -510,7 +595,9 @@ test('24-hour expiry compares elapsed milliseconds without calendar rounding', a
     const s = await session({ [recordKey()]: record });
     try {
       const page = await s.open('/following', page => page.clock.setFixedTime(new Date(now)));
-      await page.waitForTimeout(400);
+      await page.waitForTimeout(300); // Eligibility is checked at the exact boundary.
+      await page.clock.setFixedTime(new Date(now + 1000)); // End native-position observation.
+      await page.waitForTimeout(300);
       assert.equal(await page.locator('[data-jkn-reading-ui]').count(), extra === 0 ? 1 : 0);
       assert.deepEqual(s.data[recordKey()], record);
     } finally { await s.close(); }
@@ -522,7 +609,7 @@ test('shortening expiry cancels a pending restore; manual browsing creates a fre
   const s = await session({ [recordKey()]: record });
   try {
     const page = await s.open();
-    await page.waitForSelector('[data-jkn-reading-ui]');
+    await page.waitForTimeout(300);
     await page.evaluate(() => chrome.storage.local.set({ 'jkn.settings': { restoreReading: true, readingMaxAgeHours: 12 } }));
     await page.waitForTimeout(1200);
     assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), 0);
@@ -546,7 +633,7 @@ test('a background tab waits until it is visible before spending its restoration
         Object.defineProperty(document, 'hidden', { get: () => window.testHidden });
       });
     });
-    await page.waitForSelector('[data-jkn-reading-ui]');
+    assert.equal(await page.locator('[data-jkn-reading-mask]').count(), 0, 'background observation must not show a mask');
     await page.clock.fastForward(45000);
     assert.equal(await page.locator('#viewport').evaluate(root => root.scrollTop), 0);
     await page.clock.resume();

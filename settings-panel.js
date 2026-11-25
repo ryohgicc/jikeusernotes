@@ -81,7 +81,7 @@
       query('#count').textContent = `已保存 ${Object.keys(await getNotes()).length} 位用户的备注`;
     }
 
-    chrome.storage.local.get(settingsKey).then(async data => {
+    Promise.resolve().then(() => chrome.storage.local.get(settingsKey)).then(async data => {
       const settings = data[settingsKey] || {};
       restoreReading.checked = settings.restoreReading === true;
       readingNotice.checked = settings.showReadingNotice !== false;

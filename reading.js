@@ -1,5 +1,7 @@
 (() => {
   'use strict';
+  if (window.JknReadingController) return;
+  window.JknReadingController = true;
   const prefix = 'jkn.reading.';
   const settingsKey = 'jkn.settings';
   const resetKey = 'jkn.readingResetAt';
@@ -16,6 +18,11 @@
   let previousPath = location.pathname;
   let previousSearch = location.search;
   let nativeReturnRoute = null;
+  let visit = 0;
+  let lastRoute = route();
+  const automaticAttempts = new Set();
+  let updateTimer;
+  let stopped = false;
 
   function isDetailLocation(path, search) {
     return new URLSearchParams(search).has('id') || /^\/u\/[a-zA-Z0-9_-]{1,128}\/(post|repost)\//.test(path);
@@ -131,13 +138,72 @@
     return { ...defaults, ...value, restoreReading: value?.restoreReading === true, readingMaxAgeHours: maxAgeHours(value) };
   }
 
+  function contextAlive() {
+    try { return !!chrome?.runtime?.id; } catch { return false; }
+  }
+
+  function stopExpiredContext() {
+    if (stopped) return;
+    stopped = true;
+    ready = false;
+    resetGeneration++;
+    clearInterval(updateTimer);
+    clearTimeout(saveTimer);
+    cancel(state);
+    state = null;
+    hideNotice();
+    clearDivider();
+    dispatchEvent(new Event('jkn-context-expired'));
+  }
+
+  function bindStorageListener() {
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local') return;
+        if (changes[settingsKey]) {
+          const wasRestoring = settings.restoreReading;
+          settings = normalizeSettings(changes[settingsKey].newValue);
+          if (wasRestoring && !settings.restoreReading) {
+            cancel(state); clearTimeout(saveTimer); hideNotice(); clearDivider();
+          }
+          if (!wasRestoring && settings.restoreReading) restoreCurrent();
+          if (state?.job && expired(state.record)) cancel(state);
+          if (!settings.showReadingNotice && !state?.job) hideNotice();
+          update();
+        }
+        if (changes[resetKey]) {
+          resetGeneration += 1; clearTimeout(saveTimer); cancel(state);
+          if (state) { state.loading = false; state.snapshot = null; state.canSave = false; state.interacted = false; }
+          hideNotice(); clearDivider();
+        }
+      });
+      return true;
+    } catch { return false; }
+  }
+
+  async function storageGet(keys) {
+    if (!contextAlive()) { stopExpiredContext(); return Promise.reject(new Error('Extension context invalidated')); }
+    try { return await chrome.storage.local.get(keys); } catch (error) {
+      if (/context invalidated/i.test(error.message)) stopExpiredContext();
+      throw error;
+    }
+  }
+
+  async function storageSet(value) {
+    if (!contextAlive()) { stopExpiredContext(); return Promise.reject(new Error('Extension context invalidated')); }
+    try { return await chrome.storage.local.set(value); } catch (error) {
+      if (/context invalidated/i.test(error.message)) stopExpiredContext();
+      throw error;
+    }
+  }
+
   function expired(record) {
     return settings.readingExpiryEnabled !== false && Date.now() - record.savedAt > settings.readingMaxAgeHours * 3600000;
   }
 
   function persist(s) {
-    if (!s?.snapshot || !s.canSave) return;
-    chrome.storage.local.set({ [s.key]: s.snapshot }).catch(() => {});
+    if (stopped || !s?.snapshot || !s.canSave) return;
+    storageSet({ [s.key]: s.snapshot }).catch(() => {});
   }
 
   function sample(s) {
@@ -292,7 +358,8 @@
       s.canSave = false;
       s.snapshot = null;
       s.job = { began: Date.now(), pausedAt: document.hidden ? Date.now() : null,
-        startTop: resume.startTop, steps: 0, nextStep: 0, searched: true, fromStart: resume.fromStart, seen: resume.seen };
+        startTop: resume.startTop, steps: 0, nextStep: 0, searched: true, fromStart: resume.fromStart,
+        seen: resume.seen, manual: true, maskShown: true };
       showNotice('正在继续查找上次阅读位置…', '取消', () => cancel(s, true), true);
       // Allow the opaque mask to paint before returning to the search cursor.
       s.job.resumeTop = resume.top;
@@ -310,7 +377,17 @@
     for (const node of list) job.seen.add(node.getAttribute('data-jkn-post'));
     loadingView?.update({ phase: target ? 'align' : job.stalledAt ? 'load' : 'search', seen: job.seen.size,
       seconds: Math.floor(age / 1000), paused: false });
-    if (age < 800) { job.startTop = s.root.scrollTop; return; } // Let native restoration finish first.
+    if (!job.manual && !job.controlled && s.root.scrollTop > 4) {
+      cancel(s);
+      return;
+    }
+    if (age < 800) return; // Observe native restoration before showing a mask.
+    if (!job.maskShown) {
+      job.maskShown = true;
+      showNotice('正在查找上次阅读位置…', '取消', () => cancel(s, true), true);
+      return; // Paint the opaque mask before the first controlled scroll.
+    }
+    job.controlled = true;
     if (job.resumeTop !== undefined) {
       setTop(s.root, job.resumeTop);
       delete job.resumeTop;
@@ -338,7 +415,6 @@
     }
     if (now < job.nextStep) return;
     if (!job.searched) {
-      job.startTop = s.root.scrollTop;
       job.searched = true;
       setTop(s.root, s.record.top);
     } else if (!job.fromStart) {
@@ -363,24 +439,30 @@
   }
 
   function begin(s, record, manual = false) {
-    if (state !== s || keyNow() !== s.key) return;
+    if (stopped || state !== s || keyNow() !== s.key) return;
     s.loading = false;
     s.record = validRecord(record) ? record : null;
     if (!manual && s.skipAutoRestore) { s.canSave = !!s.interacted; return; }
     if (!settings.restoreReading && !manual) { s.canSave = !s.record || s.interacted; return; }
+    if (!s.record || s.interacted) { s.canSave = true; return; }
+    const attempt = `${visit}:${s.key}`;
+    if (!manual && automaticAttempts.has(attempt)) { s.canSave = false; return; }
+    if (!manual) automaticAttempts.add(attempt);
+    // Jike may have already restored its feed when this script starts. Keep
+    // the native position and avoid starting a second animated search.
+    if (!manual && s.root?.scrollTop > 4) { s.canSave = false; return; }
     // Keep stale bookmarks unchanged until the user actually browses again.
     if (s.record && expired(s.record) && !s.interacted && !manual) { s.record = null; s.canSave = false; return; }
-    if (!s.record || s.interacted) { s.canSave = true; return; }
     s.job = {
       began: Date.now(), pausedAt: document.hidden ? Date.now() : null,
-      startTop: s.root?.scrollTop || 0, steps: 0, nextStep: 0
+      startTop: s.root?.scrollTop || 0, steps: 0, nextStep: 0, manual, maskShown: manual
     };
-    showNotice('正在查找上次阅读位置…', '取消', () => cancel(s, true), true);
+    if (manual) showNotice('正在查找上次阅读位置…', '取消', () => cancel(s, true), true);
   }
 
   function restoreCurrent() {
     update();
-    if (!state || state.loading || state.job) return;
+    if (stopped || !state || state.loading || state.job) return;
     clearTimeout(saveTimer);
     clearDivider();
     state.interacted = false;
@@ -390,16 +472,18 @@
     state.record = null;
     const current = state;
     const generation = resetGeneration;
-    chrome.storage.local.get(current.key).then(data => {
+    storageGet(current.key).then(data => {
       if (generation === resetGeneration) begin(current, data[current.key], true);
     }).catch(() => { if (state === current) current.loading = false; });
   }
 
   function update() {
     if (!ready) return;
+    if (!contextAlive()) { stopExpiredContext(); return; }
     const currentPath = location.pathname;
     const currentSearch = location.search;
     const currentRoute = route();
+    if (currentRoute !== lastRoute) { visit++; lastRoute = currentRoute; automaticAttempts.clear(); }
     if (currentRoute && isDetailLocation(previousPath, previousSearch)) nativeReturnRoute = currentRoute;
     else if (currentPath !== previousPath || currentSearch !== previousSearch) nativeReturnRoute = null;
     previousPath = currentPath;
@@ -416,7 +500,7 @@
       if (state) {
         const current = state;
         const generation = resetGeneration;
-        chrome.storage.local.get(key).then(data => {
+        storageGet(key).then(data => {
           if (generation === resetGeneration) begin(current, data[key]);
         }).catch(() => {
           if (state === current) { current.loading = false; current.canSave = false; }
@@ -500,6 +584,11 @@
   addEventListener('resize', positionDivider);
   addEventListener('jkn-navigation', update);
   addEventListener('popstate', update);
+  addEventListener('pageshow', event => {
+    if (!event.persisted) return;
+    cancel(state);
+    if (state) { state.skipAutoRestore = true; state.canSave = false; }
+  });
   addEventListener('jkn-restore-reading', restoreCurrent);
   addEventListener('jkn-reading-top', () => {
     cancel(state);
@@ -507,36 +596,13 @@
     if (state) { state.canSave = false; state.snapshot = null; }
   });
 
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local') return;
-    if (changes[settingsKey]) {
-      const wasRestoring = settings.restoreReading;
-      settings = normalizeSettings(changes[settingsKey].newValue);
-      if (wasRestoring && !settings.restoreReading) {
-        cancel(state);
-        clearTimeout(saveTimer);
-        hideNotice();
-        clearDivider();
-      }
-      if (!wasRestoring && settings.restoreReading) restoreCurrent();
-      if (state?.job && expired(state.record)) cancel(state);
-      if (!settings.showReadingNotice && !state?.job) hideNotice();
-      update();
-    }
-    if (changes[resetKey]) {
-      resetGeneration += 1;
-      clearTimeout(saveTimer);
-      cancel(state);
-      if (state) { state.loading = false; state.snapshot = null; state.canSave = false; state.interacted = false; }
-      hideNotice();
-      clearDivider();
-    }
-  });
-  chrome.storage.local.get(settingsKey).then(data => {
+  bindStorageListener();
+  storageGet(settingsKey).then(data => {
+    if (stopped) return;
     settings = normalizeSettings(data[settingsKey]);
     ready = true;
     update();
     // Also covers SPA history changes which don't necessarily mutate the DOM.
-    setInterval(update, 100);
+    updateTimer = setInterval(update, 100);
   }).catch(() => {});
 })();

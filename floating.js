@@ -5,7 +5,8 @@
   const host = document.createElement('div');
   host.dataset.jknFloating = '';
   const shadow = host.attachShadow({ mode: 'open' });
-  const icon = chrome.runtime.getURL('assets/jike-logo.svg');
+  let icon;
+  try { icon = chrome.runtime.getURL('assets/jike-logo.svg'); } catch { return; }
   shadow.innerHTML = `<style>
     :host { all: initial; }
     .ball { position: fixed; right: 20px; bottom: 84px; z-index: 2147483640; width: 48px; height: 48px;
@@ -55,6 +56,14 @@
   const menu = shadow.querySelector('.menu');
   const overlay = shadow.querySelector('.overlay');
   const panel = shadow.querySelector('.panel');
+  addEventListener('jkn-context-expired', () => {
+    host.dataset.jknExpired = '';
+    panelMounted = false;
+    overlay.classList.remove('open');
+    menu.classList.remove('open');
+    ball.title = '扩展已更新，请刷新即刻页面';
+    ball.setAttribute('aria-label', ball.title);
+  });
   let panelMounted = false;
   let dragging = false;
   let moved = false;
@@ -67,6 +76,7 @@
     return minutes < 60 ? `${minutes} 分 ${seconds % 60} 秒` : `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分`;
   }
   function renderStats(data) {
+    if (host.hasAttribute('data-jkn-expired')) return;
     const missing = !data || data.error || data.unavailable;
     for (const [name, value] of Object.entries({
       'today-time': formatTime(data?.todayMs), 'total-time': formatTime(data?.totalMs),
@@ -141,6 +151,13 @@
   });
   ball.addEventListener('click', () => {
     if (suppressClick) return;
+    if (host.hasAttribute('data-jkn-expired')) {
+      menu.classList.toggle('open');
+      menu.textContent = '扩展已更新，请刷新即刻页面后继续使用。';
+      menu.style.padding = '16px';
+      positionMenu();
+      return;
+    }
     menu.classList.toggle('open');
     positionMenu();
     if (menu.classList.contains('open')) window.JknBrowsingStats?.get().then(renderStats);
@@ -166,7 +183,7 @@
   setInterval(updateVisibility, 500);
   addEventListener('resize', positionMenu);
   setInterval(() => {
-    if (menu.classList.contains('open')) renderStats(window.JknBrowsingStats?.peek());
+    if (!host.hasAttribute('data-jkn-expired') && menu.classList.contains('open')) renderStats(window.JknBrowsingStats?.peek());
   }, 1000);
   document.documentElement.append(host);
 })();

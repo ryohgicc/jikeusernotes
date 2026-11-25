@@ -8,8 +8,11 @@
   let currentAccount;
   let latest = null;
   let error = false;
+  let stopped = false;
+  addEventListener('jkn-context-expired', () => { stopped = true; error = true; reset(); });
   const dayOf = now => new Date(now).toLocaleDateString('sv-SE');
   async function send(type, account, sample) {
+    if (stopped) throw new Error('Extension context invalidated');
     const response = await chrome.runtime.sendMessage({ type, account, sample });
     if (!response?.data) throw new Error('Statistics unavailable');
     return response.data;
@@ -17,6 +20,7 @@
   function reset() { previous = null; dwell.clear(); }
   function frame() { return window.JknReadingStatsFrame?.(); }
   async function tick() {
+    if (stopped) return;
     const current = frame();
     const now = Date.now();
     const day = dayOf(now);
