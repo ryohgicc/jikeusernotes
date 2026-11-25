@@ -16,6 +16,7 @@
 
 ## 文件与数据契约
 
+- `follow.js`：页面 MAIN 环境，读取已渲染的作者关注状态，通过对应原生悬浮卡执行关注，不读取凭据或内部查询缓存；身份或状态不明确时隐藏按钮。
 - `content.js`：昵称备注，`jkn.note.<username>` -> 备注原文。不要更改用户已有备注。
 - `reading-bridge.js`：页面 MAIN 环境，只读已渲染 React props 的动态 ID，在虚拟列表容器添加 `data-jkn-post`，不接触认证数据或内部查询缓存。
 - `reading.js`：隔离环境中的阅读恢复，`jkn.reading.<account>:<route>` -> `{version:1,id,offset,top,savedAt}`。此命名空间不得用于备注备份。

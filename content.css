@@ -23,3 +23,29 @@
 @media (prefers-color-scheme: dark) {
   .jkn-note { color: #d8bc72 !important; }
 }
+
+.jkn-follow {
+  display: inline-block !important;
+  flex: 0 0 auto !important;
+  margin: 0 0 0 6px !important;
+  padding: 1px 6px !important;
+  border: 1px solid transparent !important;
+  border-radius: 5px !important;
+  background: #ffe126 !important;
+  color: #292929 !important;
+  font: 500 12px/1.5 system-ui, sans-serif !important;
+  vertical-align: middle !important;
+  white-space: nowrap !important;
+  cursor: pointer !important;
+}
+.jkn-follow[data-following="true"] {
+  border-color: #aaa !important;
+  background: transparent !important;
+  color: var(--tint-secondary, #777) !important;
+}
+.jkn-follow:hover { filter: brightness(.95); }
+.jkn-follow:focus-visible { outline: 2px solid #c9a441 !important; outline-offset: 2px !important; }
+.jkn-follow:disabled { opacity: .6 !important; cursor: wait !important; }
+
+/* Do not flash the native hover card while activating the shortcut. */
+.jkn-follow-card-opening { visibility: hidden !important; pointer-events: none !important; }

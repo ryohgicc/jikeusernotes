@@ -1,0 +1,133 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>关注按钮测试</title>
+<nav><a href="/u/self"><span title="个人主页">我的主页</span></a></nav>
+<main id="posts"></main>
+<script>
+(() => {
+  const posts = document.querySelector('#posts');
+  const records = new Map();
+  const actions = [];
+  let count = 0;
+  function HoverCard() {}
+  function UserProfileHoverCard() {}
+  function FollowToggleButton() {}
+  function element(data) {
+    return { type: FollowToggleButton, props: { data, className: '_followButton_yuyf0_67' } };
+  }
+  function updateFiber(row) {
+    const targetFiber = {
+      type: HoverCard, memoizedProps: { children: [{ props: { children: [element(row.data)] } }] },
+      return: { type: UserProfileHoverCard, memoizedProps: { data: row.data, children: {} }, return: null }
+    };
+    row.anchor.__reactFiber$fixture = { type: 'a', memoizedProps: {}, return: targetFiber };
+  }
+  function redraw(row) {
+    row.anchor.href = '/u/' + row.data.username;
+    row.anchor.textContent = row.data.username;
+    updateFiber(row);
+  }
+  function open(row) {
+    if (row.mode === 'never') return;
+    const capturedName = row.data.username;
+    const capturedFollowing = row.data.following;
+    clearTimeout(row.openTimer);
+    row.openTimer = setTimeout(() => {
+      if (!row.target.isConnected) return;
+      row.target.setAttribute('aria-expanded', 'true');
+      const dropdown = document.createElement('div');
+      dropdown.id = row.target.getAttribute('aria-controls');
+      dropdown.setAttribute('role', 'dialog');
+      const user = document.createElement('a');
+      user.href = '/u/' + (row.mode === 'wrong-user' ? 'wrong-user' : capturedName);
+      user.textContent = capturedName;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = capturedFollowing ? '_followedButton_1lqae_1' : '_followButton_1lqae_14';
+      button.textContent = capturedFollowing ? '已关注' : '关注';
+      button.disabled = row.mode === 'disabled';
+      button.addEventListener('click', event => {
+        event.stopPropagation();
+        actions.push({ username: capturedName, type: 'native-click', following: capturedFollowing });
+        button.disabled = true;
+        if (capturedFollowing) {
+          const dialog = document.createElement('div');
+          dialog.id = 'confirm';
+          dialog.setAttribute('role', 'dialog');
+          dialog.innerHTML = '<span>确定取消关注吗？</span><button data-choice="cancel">再想想</button><button data-choice="confirm">不再关注</button>';
+          dialog.querySelector('[data-choice="cancel"]').onclick = () => { button.disabled = false; dialog.remove(); };
+          dialog.querySelector('[data-choice="confirm"]').onclick = () => {
+            dialog.remove();
+            if (row.mode !== 'fail') setTimeout(() => { setFollowing(capturedName, false); button.disabled = false; }, row.mutationDelay);
+            else button.disabled = false;
+          };
+          document.body.append(dialog);
+        } else if (row.mode !== 'fail') setTimeout(() => { setFollowing(capturedName, true); button.disabled = false; }, row.mutationDelay);
+        else button.disabled = false;
+      });
+      dropdown.append(user, button);
+      document.body.append(dropdown);
+    }, row.delay);
+  }
+  function setFollowing(username, value) {
+    for (const row of records.values()) {
+      if (row.data.username !== username) continue;
+      row.data = { ...row.data, following: value };
+      redraw(row);
+    }
+  }
+  function add(username, following = false, options = {}) {
+    const id = 'row-' + count++;
+    const header = document.createElement('header');
+    header.className = '_header_go2me_1';
+    header.dataset.row = id;
+    const target = document.createElement('div');
+    target.setAttribute('aria-haspopup', 'dialog');
+    target.setAttribute('aria-expanded', 'false');
+    target.setAttribute('aria-controls', 'dropdown-' + id);
+    const wrap = document.createElement('span');
+    wrap.className = '_username_1ybpw_9';
+    const anchor = document.createElement('a');
+    const note = document.createElement('button');
+    note.className = 'jkn-note';
+    note.textContent = '+ 备注';
+    wrap.append(anchor);
+    target.append(wrap, note);
+    header.append(target);
+    posts.append(header);
+    const row = { id, header, target, anchor, mode: options.mode || 'ok', delay: options.delay ?? 20,
+      mutationDelay: options.mutationDelay || 0,
+      data: { id: options.id || username + '-id', username, following } };
+    records.set(id, row);
+    target.addEventListener('mouseover', event => {
+      if (!target.contains(event.relatedTarget)) open(row);
+    });
+    target.addEventListener('mouseout', event => {
+      if (target.contains(event.relatedTarget)) return;
+      clearTimeout(row.openTimer);
+      const dropdown = document.getElementById(target.getAttribute('aria-controls'));
+      if (dropdown) dropdown.remove();
+      target.setAttribute('aria-expanded', 'false');
+    });
+    header.addEventListener('click', () => actions.push({ username: row.data.username, type: 'post-click' }));
+    redraw(row);
+    return id;
+  }
+  window.fixture = {
+    add,
+    actions: () => [...actions],
+    setFollowing,
+    setFollowingWithoutDom(username, value) {
+      for (const row of records.values()) {
+        if (row.data.username === username) { row.data = { ...row.data, following: value }; updateFiber(row); }
+      }
+    },
+    mode(id, mode) { records.get(id).mode = mode; },
+    replace(id, username, following = false) {
+      const row = records.get(id);
+      row.data = { id: username + '-id', username, following };
+      redraw(row);
+    },
+    remove(id) { records.get(id).header.remove(); },
+    expire() { dispatchEvent(new Event('jkn-context-expired')); }
+  };
+})();
+</script></html>
